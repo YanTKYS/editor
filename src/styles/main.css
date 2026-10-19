@@ -1,0 +1,1094 @@
+/* ==========================================================================
+   配色（ライト / ダーク）
+   ========================================================================== */
+:root {
+  --ui-font: 'Segoe UI', 'Yu Gothic UI', 'Meiryo UI', 'Hiragino Sans', 'Noto Sans JP', system-ui, sans-serif;
+  --editor-font: Consolas, 'BIZ UDGothic', 'MS Gothic', 'Osaka-Mono', 'Noto Sans Mono CJK JP', ui-monospace, monospace;
+  --editor-font-size: 14px;
+  --ui-font-size: 13px;
+  --radius: 3px;
+
+  --bg: #f3f3f3;
+  --fg: #1e1e1e;
+  --fg-muted: #5f6368;
+  --border: #c8c8c8;
+  --border-strong: #a6a6a6;
+  --panel-bg: #fafafa;
+  --hover: #e2e6ea;
+  --active: #d4dbe3;
+  --accent: #2f5f8f;
+  --accent-fg: #ffffff;
+  --focus: #1a73e8;
+  --danger: #b3261e;
+  --warning-bg: #fff4ce;
+  --warning-border: #e0c35a;
+  --error-bg: #fde7e9;
+  --error-border: #e3a1a7;
+  --info-bg: #e8f1fb;
+  --info-border: #a9c7ea;
+  --success: #1e7b34;
+
+  --tab-bg: #e4e4e4;
+  --tab-active-bg: #ffffff;
+  --tab-active-border: #2f5f8f;
+
+  --editor-bg: #ffffff;
+  --editor-fg: #1e1e1e;
+  --editor-caret: #000000;
+  --editor-selection: #b5d5ff;
+  --editor-active-line: #f2f7ff;
+  --editor-active-line-gutter: #e3ecf7;
+  --editor-gutter-bg: #f5f5f5;
+  --editor-gutter-fg: #8a8a8a;
+  --editor-bracket-bg: #d7f0d7;
+  --editor-bracket-border: #74b874;
+  --editor-bad-bracket-bg: #f9caca;
+  --editor-search-match: #fff59d;
+  --editor-search-match-border: #e0c000;
+  --editor-search-current: #ffb74d;
+  --editor-selection-match: #e2e8c8;
+  --editor-whitespace: #b0b0b0;
+}
+
+:root[data-theme='dark'] {
+  --bg: #2b2d31;
+  --fg: #e3e3e3;
+  --fg-muted: #a0a4ab;
+  --border: #45484f;
+  --border-strong: #5c6069;
+  --panel-bg: #25272b;
+  --hover: #3a3d44;
+  --active: #464a52;
+  --accent: #5b8ec2;
+  --accent-fg: #ffffff;
+  --focus: #6ea8fe;
+  --danger: #f2827a;
+  --warning-bg: #4a3f1c;
+  --warning-border: #8a7430;
+  --error-bg: #4d2427;
+  --error-border: #8c3f45;
+  --info-bg: #1f3347;
+  --info-border: #3d5f82;
+  --success: #6cc483;
+
+  --tab-bg: #313338;
+  --tab-active-bg: #1e1f22;
+  --tab-active-border: #5b8ec2;
+
+  --editor-bg: #1e1f22;
+  --editor-fg: #d4d4d4;
+  --editor-caret: #f0f0f0;
+  --editor-selection: #264f78;
+  --editor-active-line: #26282c;
+  --editor-active-line-gutter: #2c2f34;
+  --editor-gutter-bg: #1e1f22;
+  --editor-gutter-fg: #6e7681;
+  --editor-bracket-bg: #2d4a2d;
+  --editor-bracket-border: #5f9a5f;
+  --editor-bad-bracket-bg: #5a2a2a;
+  --editor-search-match: #5c4d15;
+  --editor-search-match-border: #a08a2a;
+  --editor-search-current: #8a5a12;
+  --editor-selection-match: #3a3f2e;
+  --editor-whitespace: #5a5f66;
+}
+
+/* ==========================================================================
+   基本
+   ========================================================================== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--ui-font);
+  font-size: var(--ui-font-size);
+  overflow: hidden;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+}
+
+/* ==========================================================================
+   メニューバー・ツールバー
+   ========================================================================== */
+.app-header {
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.menubar {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 0 2px;
+}
+
+.menubar-item {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 2px 9px;
+  margin: 1px 0;
+  cursor: default;
+}
+
+.menubar-item:hover,
+.menubar-item.open {
+  background: var(--hover);
+  border-color: var(--border);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 3px;
+  border-top: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.toolbar-button {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.toolbar-button:hover {
+  background: var(--hover);
+  border-color: var(--border);
+}
+
+.toolbar-button:active {
+  background: var(--active);
+}
+
+.toolbar-button.tb-save::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 1px;
+  background: var(--accent);
+  vertical-align: 0;
+}
+
+.toolbar-button.tb-export::before {
+  content: '⭳';
+  margin-right: 4px;
+  color: var(--accent);
+}
+
+.toolbar-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 4px;
+  flex: none;
+}
+
+/* ==========================================================================
+   ポップアップメニュー
+   ========================================================================== */
+.popup-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 220px;
+  max-width: min(420px, 100vw);
+  max-height: calc(100vh - 8px);
+  overflow-y: auto;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.18);
+  padding: 3px 0;
+}
+
+.popup-menu:focus {
+  outline: none;
+}
+
+.menu-item {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 12px 3px 6px;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.menu-item:focus,
+.menu-item:hover {
+  background: var(--hover);
+  outline: none;
+}
+
+.menu-item.disabled {
+  color: var(--fg-muted);
+  opacity: 0.6;
+}
+
+.menu-check {
+  text-align: center;
+  color: var(--accent);
+}
+
+.menu-shortcut {
+  color: var(--fg-muted);
+  font-size: 12px;
+  padding-left: 18px;
+}
+
+.menu-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 3px 0;
+}
+
+.menu-heading {
+  padding: 4px 12px 2px 28px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+/* ==========================================================================
+   タブバー
+   ========================================================================== */
+.tabbar {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+  min-width: 0;
+}
+
+.tab-list {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  padding-top: 3px;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 220px;
+  min-width: 70px;
+  padding: 3px 3px 3px 8px;
+  margin-right: 1px;
+  background: var(--tab-bg);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  cursor: default;
+  user-select: none;
+  flex: none;
+  position: relative;
+}
+
+.tab:hover {
+  background: var(--hover);
+}
+
+.tab.active {
+  background: var(--tab-active-bg);
+  box-shadow: inset 0 2px 0 var(--tab-active-border);
+  margin-bottom: -1px;
+  padding-bottom: 4px;
+}
+
+.tab.dragging {
+  opacity: 0.5;
+}
+
+.tab.drop-before::before,
+.tab.drop-after::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--accent);
+}
+
+.tab.drop-before::before {
+  left: -2px;
+}
+
+.tab.drop-after::after {
+  right: -2px;
+}
+
+.tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.tab-dirty {
+  color: var(--accent);
+  font-size: 10px;
+  width: 8px;
+  flex: none;
+}
+
+.tab-close {
+  border: none;
+  background: none;
+  width: 18px;
+  height: 18px;
+  line-height: 16px;
+  padding: 0;
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+  flex: none;
+}
+
+.tab-close:hover {
+  background: var(--active);
+  color: var(--fg);
+}
+
+.tab-action {
+  border: none;
+  border-left: 1px solid var(--border);
+  background: none;
+  width: 28px;
+  flex: none;
+  color: var(--fg-muted);
+}
+
+.tab-action:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+/* ==========================================================================
+   通知
+   ========================================================================== */
+.banner-area {
+  flex: none;
+}
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 5px 8px;
+  border-bottom: 1px solid;
+}
+
+.banner-message {
+  flex: 1 1 300px;
+}
+
+.banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.banner-info {
+  background: var(--info-bg);
+  border-color: var(--info-border);
+}
+
+.banner-warning {
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
+}
+
+.banner-error {
+  background: var(--error-bg);
+  border-color: var(--error-border);
+}
+
+.toast-area {
+  position: fixed;
+  right: 12px;
+  bottom: 32px;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+  max-width: calc(100vw - 24px);
+}
+
+.toast {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-strong);
+  border-left: 4px solid var(--accent);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+  padding: 6px 10px;
+  max-width: 480px;
+  transition: opacity 0.3s;
+}
+
+.toast-success {
+  border-left-color: var(--success);
+}
+
+.toast-warning {
+  border-left-color: var(--warning-border);
+}
+
+.toast-error {
+  border-left-color: var(--danger);
+}
+
+.toast.leaving {
+  opacity: 0;
+}
+
+/* ==========================================================================
+   作業領域（エディタ・プレビュー・検索）
+   ========================================================================== */
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  --preview-ratio: 0.5;
+}
+
+.split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.editor-host {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  background: var(--editor-bg);
+}
+
+.editor-host .cm-editor {
+  height: 100%;
+  font-size: var(--editor-font-size);
+}
+
+.editor-host .cm-editor.cm-focused {
+  outline: none;
+}
+
+.workspace.with-preview .editor-host {
+  flex: calc(1 - var(--preview-ratio)) 1 0;
+}
+
+.splitter {
+  flex: none;
+  width: 5px;
+  cursor: col-resize;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.splitter:hover,
+.splitter:focus-visible {
+  background: var(--accent);
+}
+
+.md-preview {
+  flex: var(--preview-ratio) 1 0;
+  min-width: 0;
+  overflow: auto;
+  background: var(--editor-bg);
+  color: var(--editor-fg);
+}
+
+/* 検索パネル */
+.find-panel {
+  flex: none;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 3px 6px;
+}
+
+.find-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 0;
+}
+
+.find-input {
+  flex: 0 1 280px;
+  min-width: 120px;
+}
+
+.find-toggle {
+  min-width: 28px;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--editor-bg);
+  font-family: var(--editor-font);
+  font-size: 12px;
+}
+
+.find-toggle[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+.find-expand,
+.find-close {
+  border: none;
+  background: none;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+  padding: 0;
+}
+
+.find-expand:hover,
+.find-close:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.find-indent {
+  width: 22px;
+  flex: none;
+}
+
+.find-count {
+  min-width: 80px;
+  padding: 0 6px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.find-count[data-kind='none'] {
+  color: var(--danger);
+}
+
+.find-count[data-kind='error'] {
+  color: var(--danger);
+  font-weight: bold;
+}
+
+.find-help {
+  color: var(--fg-muted);
+  font-size: 11px;
+  padding-left: 6px;
+}
+
+/* 横断検索の結果 */
+.results-panel {
+  flex: none;
+  height: 30%;
+  min-height: 90px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-strong);
+  background: var(--panel-bg);
+}
+
+.results-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.results-title {
+  flex: 1;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.results-list {
+  flex: 1;
+  overflow: auto;
+  padding: 2px 0;
+}
+
+.results-tab {
+  padding: 3px 8px;
+  font-weight: 600;
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+}
+
+.result-item {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 1px 8px 1px 20px;
+  font-family: var(--editor-font);
+  font-size: 12px;
+  white-space: pre;
+  cursor: default;
+}
+
+.result-item:hover,
+.result-item:focus {
+  background: var(--hover);
+}
+
+.result-line {
+  color: var(--fg-muted);
+  min-width: 48px;
+  text-align: right;
+  flex: none;
+}
+
+.result-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.result-text mark {
+  background: var(--editor-search-match);
+  color: inherit;
+  outline: 1px solid var(--editor-search-match-border);
+}
+
+.results-empty {
+  padding: 6px 12px;
+  color: var(--fg-muted);
+}
+
+/* ==========================================================================
+   Markdown プレビュー
+   ========================================================================== */
+.md-preview-content {
+  padding: 12px 20px 40px;
+  max-width: 960px;
+  line-height: 1.7;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.md-preview-content h1,
+.md-preview-content h2 {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.2em;
+}
+
+.md-preview-content pre,
+.md-preview-content code {
+  font-family: var(--editor-font);
+  font-size: 0.9em;
+  background: var(--panel-bg);
+}
+
+.md-preview-content code {
+  padding: 0.1em 0.3em;
+  border-radius: var(--radius);
+}
+
+.md-preview-content pre {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  overflow: auto;
+}
+
+.md-preview-content pre code {
+  padding: 0;
+  background: none;
+}
+
+.md-preview-content blockquote {
+  margin: 0;
+  padding: 0 1em;
+  color: var(--fg-muted);
+  border-left: 4px solid var(--border);
+}
+
+.md-preview-content table {
+  border-collapse: collapse;
+}
+
+.md-preview-content th,
+.md-preview-content td {
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+}
+
+.md-preview-content img {
+  max-width: 100%;
+}
+
+.md-preview-content a {
+  color: var(--accent);
+}
+
+/* ==========================================================================
+   ステータスバー
+   ========================================================================== */
+.statusbar {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  min-height: 22px;
+  background: var(--panel-bg);
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: none;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+button.status-item:not(:disabled):hover {
+  background: var(--hover);
+}
+
+button.status-item:disabled {
+  opacity: 1;
+}
+
+.status-spacer {
+  flex: 1;
+}
+
+.status-spacer + .status-item {
+  border-left: 1px solid var(--border);
+}
+
+.status-enc {
+  border-right: none;
+}
+
+.status-save[data-kind='ok']::before,
+.status-save[data-kind='pending']::before,
+.status-save[data-kind='error']::before,
+.status-save[data-kind='warning']::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.status-save[data-kind='ok']::before {
+  background: var(--success);
+}
+
+.status-save[data-kind='pending']::before {
+  background: var(--fg-muted);
+}
+
+.status-save[data-kind='warning']::before {
+  background: var(--warning-border);
+}
+
+.status-save[data-kind='error'] {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.status-save[data-kind='error']::before {
+  background: var(--danger);
+}
+
+/* ==========================================================================
+   ダイアログ・フォーム部品
+   ========================================================================== */
+.dialog {
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0;
+  background: var(--panel-bg);
+  color: var(--fg);
+  width: min(520px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.3);
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 0.3);
+}
+
+.dialog form {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 26px);
+}
+
+.dialog-title {
+  font-size: 14px;
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.dialog-message,
+.dialog-body {
+  padding: 10px 14px 4px;
+  overflow: auto;
+}
+
+.dialog-message p {
+  margin: 0 0 6px;
+  line-height: 1.6;
+}
+
+.dialog-error {
+  color: var(--danger);
+  margin: 4px 14px 0;
+}
+
+.dialog-warning {
+  color: var(--danger);
+}
+
+.dialog-note {
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dialog-list {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+  max-height: 160px;
+  overflow: auto;
+}
+
+.dialog-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-label {
+  color: var(--fg-muted);
+}
+
+.input {
+  height: 26px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--editor-bg);
+  color: var(--editor-fg);
+}
+
+.input:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.btn {
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--editor-bg);
+  cursor: default;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: var(--hover);
+}
+
+.btn-small {
+  height: 24px;
+  padding: 0 8px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+.btn-primary:hover {
+  background: var(--accent);
+  filter: brightness(1.1);
+}
+
+.btn-danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.btn-primary.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn-plain {
+  border-color: transparent;
+  background: none;
+}
+
+.info-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.info-table th,
+.info-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 3px 8px 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.info-table th {
+  font-weight: normal;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.shortcut-table td {
+  font-family: var(--editor-font);
+  font-size: 12px;
+}
+
+/* ドロップ時のオーバーレイ */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  background: rgb(47 95 143 / 0.15);
+  border: 3px dashed var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drop-message {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-strong);
+  padding: 12px 24px;
+  font-size: 15px;
+}
+
+/* ==========================================================================
+   狭い画面
+   ========================================================================== */
+@media (max-width: 760px) {
+  .tb-optional,
+  .find-help {
+    display: none;
+  }
+
+  .split {
+    flex-direction: column;
+  }
+
+  .workspace.with-preview .editor-host {
+    flex: calc(1 - var(--preview-ratio)) 1 0;
+  }
+
+  .splitter {
+    width: auto;
+    height: 5px;
+    cursor: row-resize;
+    border: none;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .status-counts,
+  .status-indent {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .menubar-item {
+    padding: 2px 6px;
+  }
+
+  .toolbar {
+    display: none;
+  }
+
+  .status-sel,
+  .status-enc {
+    display: none;
+  }
+
+  .find-count {
+    min-width: 0;
+  }
+}
