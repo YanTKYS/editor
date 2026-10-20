@@ -101,8 +101,9 @@ export class PaneLayout {
    * 増やす場合は、表示していないタブをタブの並び順に新しいペインへ割り当てる
    * （最後に表示していたタブの次から順に）。
    * 減らす場合は、後ろのペインの表示領域だけを閉じる（タブは削除しない）。
+   * fill = false なら、増やしたペインにタブを割り当てず空のままにする。
    */
-  setCount(count: number, orderedTabIds: readonly string[]): void {
+  setCount(count: number, orderedTabIds: readonly string[], fill = true): void {
     if (!isPaneCount(count) || count === this._count) return;
     if (count < this._count) {
       this._tabs = this._tabs.slice(0, count);
@@ -121,7 +122,7 @@ export class PaneLayout {
         const id = orderedTabIds[(start + k) % orderedTabIds.length];
         if (!displayed.has(id)) queue.push(id);
       }
-      while (this._tabs.length < count) this._tabs.push(queue.shift() ?? null);
+      while (this._tabs.length < count) this._tabs.push(fill ? (queue.shift() ?? null) : null);
     }
     this._count = count;
     this.emit();

@@ -8,8 +8,10 @@ export interface DiffBarActions {
 }
 
 export interface DiffBarInfo {
+  /** 例: 「ペイン 1: original.txt」 */
   aName: string;
   bName: string;
+  resultName: string;
   added: number;
   deleted: number;
   changed: number;
@@ -55,7 +57,7 @@ export class DiffBar {
     this.el.hidden = !info;
     if (!info) return;
     this.names.textContent = `${info.aName}  ⇄  ${info.bName}`;
-    this.names.title = `比較元（左）: ${info.aName}\n比較先（右）: ${info.bName}`;
+    this.names.title = `比較元（変更前）: ${info.aName}\n比較先（変更後）: ${info.bName}\n結果: ${info.resultName}`;
     this.summary.textContent =
       info.total === 0
         ? '差分はありません（内容が同じです）'

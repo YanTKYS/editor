@@ -115,6 +115,8 @@ export interface EditorCallbacks {
 interface Pane {
   view: EditorView;
   tabId: string | null;
+  /** タブではない一時的なビュー（差分結果）を表示中か。表示中は tabId が null */
+  overlay: boolean;
 }
 
 /**
@@ -151,7 +153,7 @@ export class EditorManager {
   attachPane(index: number, host: HTMLElement): void {
     if (this.panes[index]) return;
     const view = new EditorView({ state: this.emptyState(), parent: host });
-    const pane: Pane = { view, tabId: null };
+    const pane: Pane = { view, tabId: null, overlay: false };
     view.scrollDOM.addEventListener(
       'scroll',
       () => {
@@ -329,6 +331,7 @@ export class EditorManager {
     for (const pane of this.panes) {
       if (!pane) continue;
       pane.tabId = null;
+      pane.overlay = false;
       pane.view.setState(this.emptyState());
     }
     this.entries.clear();
@@ -342,6 +345,11 @@ export class EditorManager {
    */
   showInPane(index: number, id: string | null): void {
     const pane = this.panes[index];
+    if (pane?.overlay) {
+      // 一時的なビューは、ペインにタブを表示するときだけ置き換える（空のペインへの同期では維持する）
+      if (id === null) return;
+      pane.overlay = false;
+    }
     if (!pane || pane.tabId === id) return;
     this.detach(pane);
     const entry = id ? this.entries.get(id) : undefined;
@@ -516,6 +524,9 @@ export class EditorManager {
       if (entry) {
         pane.view.dispatch({ effects: this.reconfigureEffects(entry) });
         entry.configGeneration = this.configGeneration;
+      } else if (pane.overlay) {
+        const g = this.globalConfig();
+        pane.view.dispatch({ effects: [this.theme.reconfigure(g.theme), this.wrap.reconfigure(g.wrap)] });
       } else {
         pane.view.setState(this.emptyState());
       }
@@ -569,43 +580,58 @@ export class EditorManager {
     }
   }
 
-  /** 画面上端に表示されている行（1 始まり。行の途中までを小数で表す）。表示していなければ null */
-  getTopLine(id: string): number | null {
+  /** 指定の行（1 始まり）を、タブを表示しているペインの中央付近へスクロールする。選択範囲は変えない */
+  revealLine(id: string, line: number): void {
     const view = this.liveView(id);
-    if (!view || view.state.doc.length === 0) return view ? 1 : null;
-    const top = view.scrollDOM.scrollTop;
-    const block = view.lineBlockAtHeight(top);
-    const line = view.state.doc.lineAt(block.from).number;
-    return line + (block.height > 0 ? Math.min(1, Math.max(0, (top - block.top) / block.height)) : 0);
-  }
-
-  /** 指定行（小数可）が画面上端に来るスクロール位置。offset 分だけ手前（上）に余白を取る */
-  scrollTopForLine(id: string, line: number, offset = 0): number {
-    const view = this.liveView(id);
-    if (!view) return 0;
+    if (!view) return;
     const doc = view.state.doc;
-    const n = Math.min(Math.max(1, Math.floor(line)), doc.lines);
-    const block = view.lineBlockAt(doc.line(n).from);
-    const frac = line >= doc.lines + 1 ? 1 : Math.max(0, line - n);
-    return Math.max(0, block.top + frac * block.height - offset);
+    const pos = doc.line(Math.min(Math.max(1, line), doc.lines)).from;
+    view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'center' }) });
   }
 
-  getScrollTop(id: string): number {
-    return this.liveView(id)?.scrollDOM.scrollTop ?? 0;
+  /* ---------- 一時的なビュー（差分結果） ---------- */
+
+  /**
+   * ペインに、タブではない読み取り専用の一時的なビューを表示する（差分結果など）。
+   * ペインに表示していたタブの状態（本文・Undo 履歴・スクロール位置）は退避され、
+   * 一時的なビューを閉じてからタブを表示し直すと、そのまま復元される。
+   */
+  openOverlay(index: number, doc: string, extensions: Extension): void {
+    const pane = this.panes[index];
+    if (!pane) return;
+    this.detach(pane);
+    const g = this.globalConfig();
+    pane.overlay = true;
+    pane.view.setState(
+      EditorState.create({
+        doc,
+        extensions: [
+          EditorState.readOnly.of(true),
+          phrases,
+          this.theme.of(g.theme),
+          this.wrap.of(g.wrap),
+          extensions,
+        ],
+      }),
+    );
   }
 
-  /** スクロール位置を設定し、実際に設定された位置（範囲外は丸められる）を返す */
-  setScrollTop(id: string, top: number): number {
-    const view = this.liveView(id);
-    if (!view) return 0;
-    view.scrollDOM.scrollTop = top;
-    // 表示した直後のビューは、スクロールイベントでは表示範囲を更新しないことがあるため、明示的に測り直す
-    view.requestMeasure();
-    return view.scrollDOM.scrollTop;
+  hasOverlay(index: number): boolean {
+    return !!this.panes[index]?.overlay;
   }
 
-  getViewportHeight(id: string): number {
-    return this.liveView(id)?.scrollDOM.clientHeight ?? 0;
+  /** 一時的なビューに変更を適用する */
+  updateOverlay(index: number, build: (state: EditorState) => TransactionSpec): void {
+    const pane = this.panes[index];
+    if (pane?.overlay) pane.view.dispatch(build(pane.view.state));
+  }
+
+  /** 一時的なビューを閉じてペインを空にする（タブの表示は、続けて showInPane で行う） */
+  closeOverlay(index: number): void {
+    const pane = this.panes[index];
+    if (!pane?.overlay) return;
+    pane.overlay = false;
+    pane.view.setState(this.emptyState());
   }
 
   /** 指定位置を選択してスクロールする（タブを表示しているペインで行う） */

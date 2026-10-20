@@ -1,6 +1,6 @@
 import { Text } from '@codemirror/state';
 import { describe, expect, it } from 'vitest';
-import { computeDiff, mapLine } from '../../src/core/diff';
+import { computeDiff, formatUnified, NO_DIFF_MESSAGE } from '../../src/core/diff';
 import { buildDiffMarks } from '../../src/editor/diffMarks';
 
 const doc = (s: string) => Text.of(s.split('\n'));
@@ -87,31 +87,64 @@ describe('computeDiff', () => {
   });
 });
 
-describe('mapLine', () => {
-  const r = computeDiff(doc('a\nb\nc\nd\ne'), doc('a\nX\nY\nZ\nc\nd\ne'));
-  // A の 2 行目（b）が B の 2〜4 行目（X,Y,Z）に置き換わった
-  it('差分のない範囲は行数のずれを補正する', () => {
-    expect(mapLine(r.blocks, 'a', 1)).toBe(1);
-    expect(mapLine(r.blocks, 'a', 3)).toBe(5);
-    expect(mapLine(r.blocks, 'a', 5.5)).toBe(7.5);
-    expect(mapLine(r.blocks, 'b', 5)).toBe(3);
+describe('formatUnified', () => {
+  const format = (a: string, b: string) => formatUnified(computeDiff(doc(a), doc(b)), doc(a), doc(b));
+
+  it('変更は、変更前（-）に続けて変更後（+）を並べ、変更のない行は表示しない', () => {
+    const u = format('# 設定\ntimeout=30\nretry=3\ndebug=false', '# 設定\ntimeout=60\nretry=3\ndebug=false');
+    expect(u.text).toBe('@@ -2,1 +2,1 @@\n- timeout=30\n+ timeout=60');
+    expect(u.lines.map((l) => [l.kind, l.oldNo, l.newNo])).toEqual([
+      ['hunk', null, null],
+      ['del', 2, null],
+      ['add', null, 2],
+    ]);
+    expect(u.blocks).toEqual([{ first: 0, last: 2 }]);
   });
 
-  it('差分の内側は範囲の長さに比例して対応づける', () => {
-    expect(mapLine(r.blocks, 'a', 2)).toBe(2);
-    expect(mapLine(r.blocks, 'a', 2.5)).toBe(3.5);
-    expect(mapLine(r.blocks, 'b', 3)).toBeCloseTo(2 + 1 / 3);
+  it('差分ブロックごとに見出しと空行の区切りを付ける', () => {
+    const u = format('a\ntimeout=30\nc\ndebug=false\nz', 'a\ntimeout=60\nc\ndebug=true\ncache=true\nz');
+    expect(u.text).toBe(
+      ['@@ -2,1 +2,1 @@', '- timeout=30', '+ timeout=60', '', '@@ -4,1 +4,2 @@', '- debug=false', '+ debug=true', '+ cache=true'].join('\n'),
+    );
+    expect(u.blocks).toEqual([
+      { first: 0, last: 2 },
+      { first: 4, last: 7 },
+    ]);
+    expect(u.lines[3]).toMatchObject({ kind: 'blank', block: -1 });
   });
 
-  it('差分がなければそのまま', () => {
-    expect(mapLine([], 'a', 7.25)).toBe(7.25);
+  it('追加のみ・削除のみは、git と同様に空の側の範囲を直前の行番号で表す', () => {
+    expect(format('a\nc', 'a\nb\nc').text).toBe('@@ -1,0 +2,1 @@\n+ b');
+    expect(format('a\nb\nc', 'a\nc').text).toBe('@@ -2,1 +1,0 @@\n- b');
   });
 
-  it('追加のみの位置では、相手側の追加範囲の先頭に対応づける', () => {
-    const add = computeDiff(doc('a\nc'), doc('a\nb\nb2\nc'));
-    expect(mapLine(add.blocks, 'a', 1.5)).toBe(1.5);
-    expect(mapLine(add.blocks, 'a', 2)).toBe(2);
-    expect(mapLine(add.blocks, 'a', 2.5)).toBe(4.5);
+  it('行内の異なる文字の範囲を、行の本文内のオフセットで返す', () => {
+    const u = format('hello world foo', 'hello brave world foo');
+    const del = u.lines.find((l) => l.kind === 'del')!;
+    const add = u.lines.find((l) => l.kind === 'add')!;
+    expect(del.marks).toEqual([]);
+    expect(add.marks).toEqual([[6, 12]]);
+    expect(add.text.slice(6, 12)).toBe('brave ');
+  });
+
+  it('日本語の行も扱える', () => {
+    const u = format('こんにちは世界\nさようなら', 'こんばんは世界\nさようなら');
+    expect(u.text).toBe('@@ -1,1 +1,1 @@\n- こんにちは世界\n+ こんばんは世界');
+    expect(u.lines[1].marks.length).toBeGreaterThan(0);
+  });
+
+  it('差分がなければ「差分はありません」だけを表示する', () => {
+    const u = format('a\nb', 'a\nb');
+    expect(u.text).toBe(NO_DIFF_MESSAGE);
+    expect(u.lines).toHaveLength(1);
+    expect(u.lines[0].kind).toBe('note');
+    expect(u.blocks).toEqual([]);
+    expect(format('', '').text).toBe(NO_DIFF_MESSAGE);
+  });
+
+  it('空文書との比較は全行が追加・削除になる', () => {
+    expect(format('', 'x\ny').text).toBe('@@ -0,0 +1,2 @@\n+ x\n+ y');
+    expect(format('x\ny', '').text).toBe('@@ -1,2 +0,0 @@\n- x\n- y');
   });
 });
 

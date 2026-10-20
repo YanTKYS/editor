@@ -186,7 +186,7 @@ export class FileCommands {
       bom: t.bom,
     }));
     const activeIndex = Math.max(0, store.activeTabId ? store.indexOf(store.activeTabId) : 0);
-    const { layout } = this.app;
+    const layout = this.app.layoutForSave();
     const data = createBackup(tabs, activeIndex, settings, APP_VERSION, {
       count: layout.count,
       panes: layout.tabs.map((id) => (id ? store.indexOf(id) : -1)).map((i) => (i >= 0 ? i : null)),

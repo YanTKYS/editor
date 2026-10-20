@@ -163,4 +163,68 @@ describe('EditorManager', () => {
       expect(mgr.getState('b')?.field(searchActiveField)).toBe(false);
     });
   });
+
+  describe('一時的なビュー（差分結果など）', () => {
+    beforeEach(() => {
+      mgr.attachPane(1, hosts[1]);
+      mgr.showInPane(0, 'a');
+      mgr.showInPane(1, 'b');
+    });
+
+    it('ペインのタブの本文・Undo 履歴を保ったまま一時的なビューを表示し、閉じると元のタブを表示し直せる', () => {
+      mgr.setActivePane(1);
+      type('2');
+      mgr.showInPane(1, null);
+      mgr.openOverlay(1, 'result text', []);
+      expect(hosts[1].querySelector('.cm-content')?.textContent).toBe('result text');
+      expect(mgr.hasOverlay(1)).toBe(true);
+      // 一時的なビューは読み取り専用で、タブとしては扱わない
+      expect(mgr.view.state.readOnly).toBe(true);
+      expect(mgr.activeTabId).toBeNull();
+      expect(mgr.getContent('b')).toBe('B2');
+      expect(mgr.paneOfTab('b')).toBe(-1);
+
+      mgr.closeOverlay(1);
+      expect(mgr.hasOverlay(1)).toBe(false);
+      mgr.showInPane(1, 'b');
+      expect(mgr.getContent('b')).toBe('B2');
+      expect(undo(mgr.view)).toBe(true);
+      expect(mgr.getContent('b')).toBe('B');
+    });
+
+    it('空のペインとして同期されても、一時的なビューは維持する', () => {
+      mgr.showInPane(1, null);
+      mgr.openOverlay(1, 'x', []);
+      mgr.showInPane(1, null);
+      expect(mgr.hasOverlay(1)).toBe(true);
+      expect(hosts[1].querySelector('.cm-content')?.textContent).toBe('x');
+    });
+
+    it('ペインにタブを表示すると、一時的なビューは置き換わる', () => {
+      mgr.showInPane(1, null);
+      mgr.openOverlay(1, 'x', []);
+      mgr.showInPane(1, 'b');
+      expect(mgr.hasOverlay(1)).toBe(false);
+      expect(mgr.activePaneIndex === 1 ? mgr.activeTabId : mgr.paneOfTab('b')).toBe(mgr.activePaneIndex === 1 ? 'b' : 1);
+      expect(hosts[1].querySelector('.cm-content')?.textContent).toBe('B');
+    });
+
+    it('一時的なビューを更新でき、設定変更（テーマ）にも追従する', () => {
+      mgr.showInPane(1, null);
+      mgr.openOverlay(1, 'x', []);
+      mgr.updateOverlay(1, (s) => ({ changes: { from: 0, to: s.doc.length, insert: 'updated' } }));
+      expect(hosts[1].querySelector('.cm-content')?.textContent).toBe('updated');
+      mgr.applySettings({ ...DEFAULT_SETTINGS, theme: 'dark' });
+      expect(mgr.hasOverlay(1)).toBe(true);
+      expect(hosts[1].querySelector('.cm-content')?.textContent).toBe('updated');
+      expect(hosts[1].querySelector('.cm-editor')?.classList.contains('cm-focused') ?? false).toBe(false);
+    });
+
+    it('全タブを破棄すると、一時的なビューも閉じる', () => {
+      mgr.showInPane(1, null);
+      mgr.openOverlay(1, 'x', []);
+      mgr.clear();
+      expect(mgr.hasOverlay(1)).toBe(false);
+    });
+  });
 });

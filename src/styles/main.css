@@ -59,6 +59,8 @@
   --diff-del-bar: #d73a49;
   --diff-chg-bar: #d49614;
   --diff-current: #1a73e8;
+  --diff-hunk-bg: rgb(26 115 232 / 0.1);
+  --diff-hunk-fg: #1f5aa6;
 }
 
 :root[data-theme='dark'] {
@@ -112,6 +114,8 @@
   --diff-del-bar: #f85149;
   --diff-chg-bar: #d29922;
   --diff-current: #6ea8fe;
+  --diff-hunk-bg: rgb(110 168 254 / 0.14);
+  --diff-hunk-fg: #8cbcff;
 }
 
 /* ==========================================================================
@@ -826,15 +830,132 @@ select {
   outline: none;
 }
 
+.dialog-diff {
+  width: min(600px, calc(100vw - 24px));
+}
+
 .diff-dialog-fields {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-width: min(360px, 80vw);
 }
 
-.diff-dialog-fields .dialog-note {
+.diff-dialog-fields .dialog-note,
+.diff-summary-note {
   margin: 0;
+}
+
+.diff-summary-note {
+  line-height: 1.6;
+}
+
+.diff-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ダイアログ内の、ペインの並びのプレビュー */
+.diff-preview {
+  display: flex;
+  gap: 6px;
+}
+
+.diff-preview-pane {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--editor-bg);
+  font-size: 12px;
+}
+
+.diff-preview-no {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.diff-preview-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.diff-preview-role {
+  min-height: 15px;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.diff-preview-pane.role-a,
+.diff-preview-pane.role-b {
+  border-color: var(--accent);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.diff-preview-pane.role-result {
+  border-style: dashed;
+  border-color: var(--diff-current);
+  background: var(--diff-hunk-bg);
+}
+
+/* 差分結果ビュー（読み取り専用） */
+.editor-host .cm-line.cm-diff-hunk {
+  background: var(--diff-hunk-bg);
+  color: var(--diff-hunk-fg);
+  font-weight: 600;
+}
+
+.editor-host .cm-line.cm-diff-r-del,
+.editor-host .cm-line.cm-diff-r-add {
+  background-repeat: no-repeat;
+  background-size: 3px 100%;
+}
+
+.editor-host .cm-line.cm-diff-r-del {
+  background-color: var(--diff-del-bg);
+  background-image: linear-gradient(var(--diff-del-bar), var(--diff-del-bar));
+}
+
+.editor-host .cm-line.cm-diff-r-add {
+  background-color: var(--diff-add-bg);
+  background-image: linear-gradient(var(--diff-add-bar), var(--diff-add-bar));
+}
+
+.editor-host .cm-line.cm-diff-r-blank {
+  min-height: 0.6em;
+}
+
+.editor-host .cm-line.cm-diff-r-note {
+  padding: 14px 12px;
+  color: var(--fg-muted);
+}
+
+.cm-diff-r-del .cm-diff-sign {
+  color: var(--diff-del-bar);
+  font-weight: 700;
+}
+
+.cm-diff-r-add .cm-diff-sign {
+  color: var(--diff-add-bar);
+  font-weight: 700;
+}
+
+.cm-diff-gutter .cm-gutterElement {
+  min-width: 4ch;
+  padding: 0 6px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.cm-diff-gutter-newNo {
+  border-left: 1px solid var(--border);
 }
 
 /* ツールバーの分割切り替え */

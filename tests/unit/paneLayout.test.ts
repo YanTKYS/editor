@@ -25,6 +25,13 @@ describe('PaneLayout', () => {
     expect(l2.tabs).toEqual(['t1', 't2', 't3']);
   });
 
+  it('fill = false なら、増やしたペインにタブを割り当てず空のままにする', () => {
+    const l = layoutWith(['t1']);
+    l.setCount(3, ids, false);
+    expect(l.tabs).toEqual(['t1', null, null]);
+    expect(l.count).toBe(3);
+  });
+
   it('タブ数がペイン数より少なければ空のペインになる', () => {
     const l = new PaneLayout();
     l.load({ count: 1, tabs: ['t1'] }, ['t1', 't2'], true);

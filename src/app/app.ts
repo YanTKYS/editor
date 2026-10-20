@@ -28,7 +28,7 @@ import { closePopup, PopupMenu, type MenuItem } from '../ui/popupMenu';
 import { MarkdownPreview } from '../ui/preview';
 import { StatusBar } from '../ui/statusBar';
 import { TabBar } from '../ui/tabBar';
-import { DiffController, type DiffTargets } from './diffController';
+import { DiffController } from './diffController';
 import { FileCommands } from './fileCommands';
 import { buildMenus, buildToolbar } from './menus';
 import { SearchController } from './searchController';
@@ -321,7 +321,6 @@ export class App {
 
   private onEditorScroll(id: string): void {
     this.cursorDirty = true;
-    this.diff.onScroll(id);
     if (id !== this.store.activeTabId) return;
     if (!this.preview.visible) return;
     const s = this.editor.view.scrollDOM;
@@ -532,19 +531,22 @@ export class App {
   /* 差分比較                                                                */
   /* ====================================================================== */
 
-  /** 比較するタブを選んで差分比較を開始する（比較中なら対象を変更する） */
+  /** 比較元・比較先・結果表示の 3 つのペインを選んで差分比較を開始する（比較中なら指定を変更する） */
   async openDiffDialog(): Promise<void> {
     if (this.store.count < 2) {
-      this.notifications.toast('差分比較には 2 つ以上のタブが必要です。');
+      this.notifications.toast('差分比較には 2 つ以上のタブが必要です。2 つのファイルを開いてください。');
       return;
     }
+    const plan = this.diff.planLayout();
     const targets = await showDiffDialog({
-      tabs: this.store.all,
-      paneCount: this.layout.count,
-      initial: this.defaultDiffTargets(),
-      validate: (t) => this.diff.validate(t),
+      paneNames: plan.map((id) => (id ? (this.store.get(id)?.name ?? null) : null)),
+      expandedFrom: this.layout.count < plan.length ? this.layout.count : null,
+      changing: this.diff.active,
+      initial: this.diff.defaultTargets(plan),
+      validate: (t) => this.diff.validate(t, plan),
     });
-    if (!targets || !this.diff.start(targets)) return;
+    // キャンセルした場合は、ペイン配置を変更しない
+    if (!targets || !this.diff.start(targets, plan)) return;
     this.editor.focus();
   }
 
@@ -553,41 +555,19 @@ export class App {
     this.editor.focus();
   }
 
-  /** ダイアログの初期値: 比較中なら現在の対象。そうでなければアクティブなタブと、隣のペインまたは次のタブ */
-  private defaultDiffTargets(): DiffTargets {
-    const status = this.diff.status;
-    if (status) return { a: status.a, b: status.b, paneA: status.paneA, paneB: status.paneB };
-    const { layout, store } = this;
-    const ids = store.all.map((t) => t.id);
-    const paneA = layout.count === 1 ? 0 : layout.active;
-    const paneB = layout.count === 1 ? 1 : this.nextPaneWithTab(paneA);
-    const a = layout.tabs[paneA] ?? store.activeTabId ?? ids[0];
-    const shown = layout.count > 1 ? layout.tabs[paneB] : null;
-    let b = shown && shown !== a ? shown : null;
-    if (!b) {
-      const start = ids.indexOf(a);
-      b = ids[(start + 1) % ids.length] === a ? ids[0] : ids[(start + 1) % ids.length];
-    }
-    return { a, b, paneA, paneB };
-  }
-
-  /** 指定のペインの次（右）にある、タブを表示しているペイン。なければ単に次のペイン */
-  private nextPaneWithTab(pane: number): number {
-    const { count, tabs } = this.layout;
-    for (let k = 1; k < count; k++) {
-      const i = (pane + k) % count;
-      if (tabs[i]) return i;
-    }
-    return (pane + 1) % count;
+  /** 保存用のペイン配置（差分比較中も、結果表示のために外したタブを元のペインに戻した配置を保存する） */
+  layoutForSave() {
+    return this.diff.layoutForSave();
   }
 
   private updateDiffUi(): void {
     const st = this.diff.status;
-    const name = (id: string) => this.store.get(id)?.name ?? '';
+    const label = (pane: number, id?: string) => `ペイン ${pane + 1}${id ? `: ${this.store.get(id)?.name ?? ''}` : ''}`;
     this.diffBar.update(
       st && {
-        aName: name(st.a),
-        bName: name(st.b),
+        aName: label(st.a, st.aTab),
+        bName: label(st.b, st.bTab),
+        resultName: label(st.result),
         added: st.added,
         deleted: st.deleted,
         changed: st.changed,
@@ -596,7 +576,7 @@ export class App {
         precise: st.precise,
       },
     );
-    this.paneArea.setDiffRoles(this.diff.panes);
+    this.paneArea.setDiffRoles(st && { a: st.a, b: st.b, result: st.result });
     this.editor.requestMeasure();
   }
 
@@ -912,7 +892,7 @@ export class App {
       app: '',
       activeTabId: this.store.activeTabId,
       settings: this.settings,
-      layout: this.layout.toJSON(),
+      layout: this.layoutForSave(),
       tabs: this.store.all.map((t) => ({
         ...t,
         selection: this.editor.getSelection(t.id),
