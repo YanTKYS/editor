@@ -17,6 +17,8 @@ export type CommandId =
   | 'renameTab'
   | 'toggleWrap'
   | 'togglePreview'
+  | 'diffNext'
+  | 'diffPrev'
   | 'focusPane1'
   | 'focusPane2'
   | 'focusPane3'
@@ -60,6 +62,8 @@ export const BINDINGS: Binding[] = [
   { command: 'renameTab', keys: ['F2'] },
   { command: 'toggleWrap', keys: ['Alt+Z'] },
   { command: 'togglePreview', keys: ['Alt+P'] },
+  { command: 'diffNext', keys: ['F8'] },
+  { command: 'diffPrev', keys: ['Shift+F8'] },
   { command: 'focusPane1', keys: ['Alt+1'] },
   { command: 'focusPane2', keys: ['Alt+2'] },
   { command: 'focusPane3', keys: ['Alt+3'] },

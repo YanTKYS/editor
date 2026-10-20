@@ -31,6 +31,8 @@ import {
 } from '@codemirror/state';
 import {
   crosshairCursor,
+  Decoration,
+  type DecorationSet,
   drawSelection,
   dropCursor,
   EditorView,
@@ -43,6 +45,7 @@ import {
   rectangularSelection,
 } from '@codemirror/view';
 import type { EditorMode, LineEnding, SelectionJSON, Settings } from '../core/types';
+import { diffExtension, diffMarksField, diffMarksSpec } from './diffMarks';
 import { getLoadedLanguage, loadLanguage } from './languages';
 import { themeExtension } from './theme';
 import {
@@ -228,6 +231,7 @@ export class EditorManager {
       search(),
       searchActiveField,
       searchHighlighter,
+      diffExtension,
       keymap.of(editorKeymap),
       EditorView.contentAttributes.of({ 'aria-label': 'テキスト編集領域', spellcheck: 'false' }),
       EditorView.domEventHandlers({
@@ -546,6 +550,62 @@ export class EditorManager {
 
   focus(): void {
     this.panes[this.activePane]?.view.focus();
+  }
+
+  /* ---------- 差分表示 ---------- */
+
+  /**
+   * タブに差分の強調表示を設定する（null で解除）。本文・Undo 履歴・選択範囲は変更しない。
+   * 表示していないタブにも設定できる。
+   */
+  setDiffMarks(id: string, marks: DecorationSet | null): void {
+    const entry = this.entries.get(id);
+    if (!entry) return;
+    const view = this.liveView(id);
+    if (view) {
+      if (marks || view.state.field(diffMarksField, false)?.size) view.dispatch(diffMarksSpec(marks ?? Decoration.none));
+    } else if (entry.state) {
+      entry.state = entry.state.update(diffMarksSpec(marks ?? Decoration.none)).state;
+    }
+  }
+
+  /** 画面上端に表示されている行（1 始まり。行の途中までを小数で表す）。表示していなければ null */
+  getTopLine(id: string): number | null {
+    const view = this.liveView(id);
+    if (!view || view.state.doc.length === 0) return view ? 1 : null;
+    const top = view.scrollDOM.scrollTop;
+    const block = view.lineBlockAtHeight(top);
+    const line = view.state.doc.lineAt(block.from).number;
+    return line + (block.height > 0 ? Math.min(1, Math.max(0, (top - block.top) / block.height)) : 0);
+  }
+
+  /** 指定行（小数可）が画面上端に来るスクロール位置。offset 分だけ手前（上）に余白を取る */
+  scrollTopForLine(id: string, line: number, offset = 0): number {
+    const view = this.liveView(id);
+    if (!view) return 0;
+    const doc = view.state.doc;
+    const n = Math.min(Math.max(1, Math.floor(line)), doc.lines);
+    const block = view.lineBlockAt(doc.line(n).from);
+    const frac = line >= doc.lines + 1 ? 1 : Math.max(0, line - n);
+    return Math.max(0, block.top + frac * block.height - offset);
+  }
+
+  getScrollTop(id: string): number {
+    return this.liveView(id)?.scrollDOM.scrollTop ?? 0;
+  }
+
+  /** スクロール位置を設定し、実際に設定された位置（範囲外は丸められる）を返す */
+  setScrollTop(id: string, top: number): number {
+    const view = this.liveView(id);
+    if (!view) return 0;
+    view.scrollDOM.scrollTop = top;
+    // 表示した直後のビューは、スクロールイベントでは表示範囲を更新しないことがあるため、明示的に測り直す
+    view.requestMeasure();
+    return view.scrollDOM.scrollTop;
+  }
+
+  getViewportHeight(id: string): number {
+    return this.liveView(id)?.scrollDOM.clientHeight ?? 0;
   }
 
   /** 指定位置を選択してスクロールする（タブを表示しているペインで行う） */

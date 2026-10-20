@@ -18,6 +18,7 @@ interface PaneElements {
   root: HTMLElement;
   header: HTMLElement;
   title: HTMLElement;
+  badge: HTMLElement;
   host: HTMLElement;
   empty: HTMLElement;
 }
@@ -54,9 +55,12 @@ export class PaneArea {
       attrs: { 'aria-label': `ペイン ${index + 1} に表示するタブを選ぶ`, 'aria-haspopup': 'menu' },
     });
     pick.addEventListener('click', () => this.actions.pickTab(index, pick));
+    const badge = h('span', { class: 'pane-diff-badge' });
+    badge.hidden = true;
     const header = h('div', { class: 'pane-header' }, [
       h('span', { class: 'pane-number', text: String(index + 1) }),
       title,
+      badge,
       pick,
     ]);
     const host = h('div', { class: 'editor-host' });
@@ -106,7 +110,18 @@ export class PaneArea {
       true,
     );
     this.el.append(root);
-    return { root, header, title, host, empty };
+    return { root, header, title, badge, host, empty };
+  }
+
+  /** 差分比較中のペインに「比較元」「比較先」の表示を付ける（比較中でなければ null） */
+  setDiffRoles(roles: { a: number; b: number } | null): void {
+    this.panes.forEach((p, i) => {
+      const role = roles?.a === i ? 'a' : roles?.b === i ? 'b' : null;
+      p.badge.hidden = !role;
+      p.badge.textContent = role === 'a' ? '比較元' : role === 'b' ? '比較先' : '';
+      if (role) p.root.dataset.diff = role;
+      else delete p.root.dataset.diff;
+    });
   }
 
   /** 配置を画面に反映する */
