@@ -107,6 +107,20 @@ export function computeDiff(a: Text, b: Text): DiffResult {
   const result: DiffResult = { blocks: [], added: 0, deleted: 0, changed: 0, precise: true };
   if (a.eq(b)) return result;
 
+  // 空の文書は「行がない」ものとして、相手の全行を追加（削除）として扱う
+  if (a.length === 0 || b.length === 0) {
+    const empty = a.length === 0;
+    tally(result, {
+      kind: empty ? 'add' : 'del',
+      startLineA: 1,
+      endLineA: empty ? 1 : a.lines + 1,
+      startLineB: 1,
+      endLineB: empty ? b.lines + 1 : 1,
+      inline: [],
+    });
+    return result;
+  }
+
   const encoded = encodeLines([a, b]);
   if (encoded) {
     for (const c of diff(encoded[0], encoded[1], LINE_DIFF_CONFIG)) {
@@ -145,23 +159,83 @@ export function computeDiff(a: Text, b: Text): DiffResult {
   return result;
 }
 
-/**
- * 片方の文書の行位置（小数可。行の途中まで含む）を、もう片方の文書の対応する行位置に変換する。
- * 差分のない範囲は行数のずれだけを補正し、差分の内側は範囲の長さに比例して対応づける。
- * スクロール位置の同期に使う。
- */
-export function mapLine(blocks: readonly DiffBlock[], from: 'a' | 'b', line: number): number {
-  let prevFrom = 1;
-  let prevTo = 1;
-  for (const blk of blocks) {
-    const sFrom = from === 'a' ? blk.startLineA : blk.startLineB;
-    const eFrom = from === 'a' ? blk.endLineA : blk.endLineB;
-    const sTo = from === 'a' ? blk.startLineB : blk.startLineA;
-    const eTo = from === 'a' ? blk.endLineB : blk.endLineA;
-    if (line < sFrom || (eFrom === sFrom && line <= sFrom)) return prevTo + (line - prevFrom);
-    if (line < eFrom) return sTo + ((line - sFrom) / (eFrom - sFrom)) * (eTo - sTo);
-    prevFrom = eFrom;
-    prevTo = eTo;
+/** 統一差分形式（Git の diff に近い形式）の 1 行の種類 */
+export type UnifiedKind = 'hunk' | 'del' | 'add' | 'blank' | 'note';
+
+export interface UnifiedLine {
+  kind: UnifiedKind;
+  /** 行頭に付ける記号（削除は「- 」、追加は「+ 」） */
+  prefix: string;
+  text: string;
+  /** 比較元・比較先での行番号（該当しなければ null） */
+  oldNo: number | null;
+  newNo: number | null;
+  /** 属する差分の番号（区切り行・案内行は -1） */
+  block: number;
+  /** 行内の異なる文字の範囲（text 内のオフセット） */
+  marks: [number, number][];
+}
+
+export interface UnifiedDiff {
+  /** 表示する本文 */
+  text: string;
+  lines: UnifiedLine[];
+  /** 差分ごとの先頭・末尾の行（0 始まり。見出し行から最後の追加・削除行まで） */
+  blocks: { first: number; last: number }[];
+}
+
+export const NO_DIFF_MESSAGE = '差分はありません';
+
+/** git の hunk 見出しと同様に、空の範囲は直前の行番号で表す */
+function hunkRange(start: number, end: number): string {
+  const count = end - start;
+  return `${count === 0 ? start - 1 : start},${count}`;
+}
+
+/** 範囲 [from, to) と行 line の重なりを、行内のオフセットで返す */
+function clipToLine(line: { from: number; to: number }, changes: [number, number][]): [number, number][] {
+  const out: [number, number][] = [];
+  for (const [from, to] of changes) {
+    const f = Math.max(from, line.from);
+    const t = Math.min(to, line.to);
+    if (t > f) out.push([f - line.from, t - line.from]);
   }
-  return prevTo + (line - prevFrom);
+  return out;
+}
+
+/**
+ * 差分のある箇所だけを、統一差分形式に近い形で整形する。変更のない行は含めない。
+ * 変更行は、変更前（-）に続けて変更後（+）を並べる。
+ */
+export function formatUnified(result: DiffResult, a: Text, b: Text): UnifiedDiff {
+  const lines: UnifiedLine[] = [];
+  const blocks: { first: number; last: number }[] = [];
+  if (result.blocks.length === 0) {
+    lines.push({ kind: 'note', prefix: '', text: NO_DIFF_MESSAGE, oldNo: null, newNo: null, block: -1, marks: [] });
+  }
+  result.blocks.forEach((blk, index) => {
+    if (index > 0) lines.push({ kind: 'blank', prefix: '', text: '', oldNo: null, newNo: null, block: -1, marks: [] });
+    const first = lines.length;
+    lines.push({
+      kind: 'hunk',
+      prefix: '',
+      text: `@@ -${hunkRange(blk.startLineA, blk.endLineA)} +${hunkRange(blk.startLineB, blk.endLineB)} @@`,
+      oldNo: null,
+      newNo: null,
+      block: index,
+      marks: [],
+    });
+    const inlineA: [number, number][] = blk.inline.map((c) => [c.fromA, c.toA]);
+    const inlineB: [number, number][] = blk.inline.map((c) => [c.fromB, c.toB]);
+    for (let n = blk.startLineA; n < blk.endLineA; n++) {
+      const line = a.line(n);
+      lines.push({ kind: 'del', prefix: '- ', text: line.text, oldNo: n, newNo: null, block: index, marks: clipToLine(line, inlineA) });
+    }
+    for (let n = blk.startLineB; n < blk.endLineB; n++) {
+      const line = b.line(n);
+      lines.push({ kind: 'add', prefix: '+ ', text: line.text, oldNo: null, newNo: n, block: index, marks: clipToLine(line, inlineB) });
+    }
+    blocks.push({ first, last: lines.length - 1 });
+  });
+  return { text: lines.map((l) => l.prefix + l.text).join('\n'), lines, blocks };
 }

@@ -21,6 +21,15 @@ interface PaneElements {
   badge: HTMLElement;
   host: HTMLElement;
   empty: HTMLElement;
+  /** 表示するタブがあるか */
+  hasTab: boolean;
+}
+
+/** 差分比較中の各ペインの役割（ペイン番号は 0 始まり） */
+export interface DiffRoles {
+  a: number;
+  b: number;
+  result: number;
 }
 
 /**
@@ -31,6 +40,7 @@ interface PaneElements {
 export class PaneArea {
   readonly el: HTMLElement;
   private readonly panes: PaneElements[] = [];
+  private roles: DiffRoles | null = null;
 
   constructor(private readonly actions: PaneAreaActions) {
     this.el = h('div', {
@@ -110,18 +120,34 @@ export class PaneArea {
       true,
     );
     this.el.append(root);
-    return { root, header, title, badge, host, empty };
+    return { root, header, title, badge, host, empty, hasTab: false };
   }
 
-  /** 差分比較中のペインに「比較元」「比較先」の表示を付ける（比較中でなければ null） */
-  setDiffRoles(roles: { a: number; b: number } | null): void {
+  /**
+   * 差分比較中のペインに「比較元」「比較先」「差分結果」の表示を付ける（比較中でなければ null）。
+   * 結果表示のペインは、タブがなくてもエディタ（差分結果）を表示する。
+   */
+  setDiffRoles(roles: DiffRoles | null): void {
+    this.roles = roles;
     this.panes.forEach((p, i) => {
-      const role = roles?.a === i ? 'a' : roles?.b === i ? 'b' : null;
+      const role = roles?.a === i ? 'a' : roles?.b === i ? 'b' : roles?.result === i ? 'result' : null;
       p.badge.hidden = !role;
-      p.badge.textContent = role === 'a' ? '比較元' : role === 'b' ? '比較先' : '';
+      p.badge.textContent = role === 'a' ? '比較元' : role === 'b' ? '比較先' : role === 'result' ? '差分結果' : '';
       if (role) p.root.dataset.diff = role;
       else delete p.root.dataset.diff;
+      this.applyVisibility(p, i);
     });
+  }
+
+  private applyVisibility(p: PaneElements, index: number): void {
+    const result = this.roles?.result === index;
+    p.empty.hidden = p.hasTab || result;
+    p.host.hidden = !p.hasTab && !result;
+    p.root.classList.toggle('empty', !p.hasTab && !result);
+    if (result) {
+      p.title.textContent = '差分結果（読み取り専用）';
+      p.title.title = '';
+    }
   }
 
   /** 配置を画面に反映する */
@@ -139,12 +165,11 @@ export class PaneArea {
       const tab = layout.tabs[i] ? store.get(layout.tabs[i]!) : null;
       const active = i === layout.active;
       p.root.classList.toggle('active', active);
-      p.root.classList.toggle('empty', !tab);
       p.header.hidden = count === 1;
       p.title.textContent = tab ? `${tab.modifiedSinceFile ? '● ' : ''}${tab.name}` : '（空）';
       p.title.title = tab ? tab.name : '';
-      p.empty.hidden = !!tab;
-      p.host.hidden = !tab;
+      p.hasTab = !!tab;
+      this.applyVisibility(p, i);
     });
   }
 }

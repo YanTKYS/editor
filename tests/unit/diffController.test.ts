@@ -1,20 +1,19 @@
 import { redo, undo } from '@codemirror/commands';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DiffController } from '../../src/app/diffController';
+import { DiffController, type DiffTargets } from '../../src/app/diffController';
 import { PaneLayout } from '../../src/core/paneLayout';
 import { TabStore } from '../../src/core/tabStore';
 import { DEFAULT_SETTINGS } from '../../src/core/types';
 import { EditorManager } from '../../src/editor/editorManager';
 
 /** App と同じ構成（モデル + EditorManager）で、DiffController を単体で検証する */
-describe('DiffController', () => {
+describe('DiffController（比較元・比較先・結果表示の 3 ペイン方式）', () => {
   let hosts: HTMLElement[];
   let layout: PaneLayout;
   let store: TabStore;
   let editor: EditorManager;
   let diff: DiffController;
   let notices: string[];
-  let docChanges: string[];
 
   const order = () => store.all.map((t) => t.id);
 
@@ -38,14 +37,10 @@ describe('DiffController', () => {
       return el;
     });
     notices = [];
-    docChanges = [];
     layout = new PaneLayout();
     store = new TabStore();
     editor = new EditorManager({ ...DEFAULT_SETTINGS }, {
-      onDocChange: (id) => {
-        docChanges.push(id);
-        diff.onDocChange(id);
-      },
+      onDocChange: (id) => diff.onDocChange(id),
       onCursorActivity: () => {},
     });
     layout.events.on('change', syncPanes);
@@ -64,298 +59,499 @@ describe('DiffController', () => {
     for (const el of hosts) el.remove();
   });
 
-  const marked = (host: HTMLElement, cls: string) => host.querySelectorAll(`.cm-line.${cls}`).length;
-  const type = (id: string, text: string) => {
-    const pane = layout.paneOf(id);
-    editor.applyToTab(id, (s) => ({ changes: { from: s.doc.length, insert: text }, userEvent: 'input.type' }));
-    return pane;
+  /** 比較を開始する（ダイアログと同様に、配置の計画と初期値を使う） */
+  const begin = (targets?: Partial<DiffTargets>): boolean => {
+    const plan = diff.planLayout();
+    return diff.start({ ...diff.defaultTargets(plan), ...targets }, plan);
   };
+  const lines = (host: HTMLElement) => Array.from(host.querySelectorAll('.cm-line')).map((l) => l.textContent);
+  const marked = (host: HTMLElement, cls: string) => host.querySelectorAll(`.cm-line.${cls}`).length;
+  const noDiffMarks = (host: HTMLElement) => host.querySelectorAll('.cm-line[class*="cm-diff-"]').length === 0;
 
-  it('同じタブ同士・不正なペイン指定は開始できない', () => {
-    expect(diff.start({ a: 'a', b: 'a', paneA: 0, paneB: 1 })).toBe(false);
-    expect(diff.validate({ a: 'a', b: 'a', paneA: 0, paneB: 1 })).toContain('同じタブ');
-    expect(diff.validate({ a: 'a', b: 'b', paneA: 0, paneB: 0 })).toContain('ペイン');
-    expect(diff.validate({ a: 'a', b: 'x', paneA: 0, paneB: 1 })).toContain('見つかりません');
-    expect(diff.active).toBe(false);
-    expect(layout.count).toBe(1);
-  });
-
-  it('1 画面から 2 分割にして比較し、終了すると元の配置に戻る', () => {
-    expect(diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 })).toBe(true);
-    expect(layout.count).toBe(2);
-    expect(layout.tabs).toEqual(['a', 'b']);
-    expect(diff.status).toMatchObject({ a: 'a', b: 'b', total: 2, changed: 1, added: 1, deleted: 0 });
-    expect(marked(hosts[0], 'cm-diff-chg')).toBe(1);
-    expect(marked(hosts[1], 'cm-diff-chg')).toBe(1);
-    expect(marked(hosts[1], 'cm-diff-add')).toBe(1);
-
-    diff.end();
-    expect(diff.active).toBe(false);
-    expect(layout.toJSON()).toEqual({ count: 1, tabs: ['a'], active: 0 });
-    expect(hosts[0].querySelectorAll('[class*="cm-diff-"]').length).toBe(0);
-    expect(notices).toEqual([]);
-  });
-
-  it('タブや本文を複製せず、既存のタブをそのまま使う', () => {
-    const before = order();
-    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
-    expect(order()).toEqual(before);
-    expect(editor.getContent('a')).toBe('one\ntwo\nthree');
-    expect(editor.getContent('b')).toBe('one\n2\nthree\nfour');
-    diff.end();
-    expect(editor.getContent('a')).toBe('one\ntwo\nthree');
-  });
-
-  it('同一内容なら差分なしになる', () => {
-    editor.applyToTab('c', (s) => ({ changes: { from: 0, to: s.doc.length, insert: 'one\ntwo\nthree' } }));
-    diff.start({ a: 'a', b: 'c', paneA: 0, paneB: 1 });
-    expect(diff.status).toMatchObject({ total: 0, current: -1 });
-    expect(hosts[0].querySelectorAll('[class*="cm-diff-"]').length).toBe(0);
-    diff.next();
-    diff.previous();
-    expect(diff.status?.current).toBe(-1);
-  });
-
-  it('2 分割では左右のペインで比較し、比較先・比較元のペインを逆にもできる', () => {
-    layout.setCount(2, order());
-    diff.start({ a: 'b', b: 'a', paneA: 1, paneB: 0 });
-    expect(layout.tabs).toEqual(['a', 'b']);
-    expect(diff.panes).toEqual({ a: 1, b: 0 });
-    // b が比較元: 'two' が 2 に変わり、four が増えている → A(b) 側に 2 と four、B(a) 側に two
-    expect(marked(hosts[1], 'cm-diff-chg')).toBe(1);
-    expect(marked(hosts[0], 'cm-diff-del')).toBe(0);
-    expect(diff.status).toMatchObject({ added: 0, deleted: 1, changed: 1 });
-  });
-
-  it('3・4 分割では指定した 2 つのペインで比較し、他のペインは維持する', () => {
-    layout.setCount(4, order());
-    expect(layout.tabs).toEqual(['a', 'b', 'c', 'd']);
-    diff.start({ a: 'c', b: 'd', paneA: 2, paneB: 3 });
-    expect(layout.tabs).toEqual(['a', 'b', 'c', 'd']);
-    expect(layout.count).toBe(4);
-    expect(layout.active).toBe(2);
-    expect(hosts[0].querySelectorAll('[class*="cm-diff-"]').length).toBe(0);
-    expect(hosts[1].querySelectorAll('[class*="cm-diff-"]').length).toBe(0);
-    expect(marked(hosts[2], 'cm-diff-chg')).toBe(1);
-
-    // 比較するタブが別のペインに表示されていても、指定したペインへ移して比較する（他のペインは空になるだけ）
-    diff.start({ a: 'a', b: 'd', paneA: 0, paneB: 2 });
-    expect(layout.tabs).toEqual(['a', 'b', 'd', null]);
-    expect(marked(hosts[0], 'cm-diff-chg')).toBe(3);
-    expect(marked(hosts[2], 'cm-diff-chg')).toBe(1);
-    // 比較対象を変更しても、比較開始前の配置（1 画面）を覚えている
-    diff.end();
-    expect(layout.toJSON()).toEqual({ count: 4, tabs: ['a', 'b', 'c', 'd'], active: 0 });
-  });
-
-  it('比較終了時、比較開始前のアクティブなペインとタブ配置を復元する', () => {
-    layout.setCount(3, order());
-    layout.setActive(1);
-    const before = layout.toJSON();
-    diff.start({ a: 'c', b: 'd', paneA: 0, paneB: 2 });
-    expect(layout.tabs).toEqual(['c', 'b', 'd']);
-    diff.end();
-    expect(layout.toJSON()).toEqual(before);
-  });
-
-  it('比較開始前に空だったペインは、比較対象にしても終了後に空へ戻す（空のアクティブペインを含む）', () => {
-    layout.load({ count: 4, tabs: ['a', null, 'c', null], active: 1 }, order());
-    const before = layout.toJSON();
-    // 空のペイン 1・3 を比較先にし、c も別のペインへ移す
-    diff.start({ a: 'd', b: 'c', paneA: 1, paneB: 3 });
-    expect(layout.tabs).toEqual(['a', 'd', null, 'c']);
-    diff.end();
-    expect(layout.toJSON()).toEqual(before);
-    expect(layout.tabs).toEqual(['a', null, 'c', null]);
-    expect(layout.active).toBe(1);
-    // 空のペインに戻しても、比較した 2 つのタブの本文は残っている
-    expect(editor.getContent('d')).toBe('dddd');
-    expect(editor.getContent('c')).toBe('unrelated');
-    expect(hosts[1].querySelectorAll('[class*="cm-diff-"]').length).toBe(0);
-  });
-
-  it('1 画面・2 分割で空のペインを含む配置も、そのまま復元する', () => {
-    layout.load({ count: 2, tabs: ['a', null], active: 1 }, order());
-    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
-    diff.end();
-    expect(layout.toJSON()).toEqual({ count: 2, tabs: ['a', null], active: 1 });
-  });
-
-  it('比較開始前のタブが比較中に閉じられた場合だけ、そのペインを現在のタブで補う', () => {
-    layout.setCount(3, order());
-    expect(layout.tabs).toEqual(['a', 'b', 'c']);
-    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
-    const index = store.indexOf('c');
-    store.remove('c');
-    editor.removeTab('c');
-    layout.removeTab('c', order(), index); // ペイン 3 には隣の d が表示される
-    expect(layout.tabs[2]).toBe('d');
-    diff.end();
-    expect(layout.tabs).toEqual(['a', 'b', 'd']);
-  });
-
-  it('比較開始前のタブが閉じられても、他のペインに割り当てたタブでは補わない（同じタブを重複表示しない）', () => {
-    layout.load({ count: 3, tabs: ['a', 'c', 'd'], active: 0 }, order());
-    diff.start({ a: 'a', b: 'c', paneA: 0, paneB: 1 });
-    const index = store.indexOf('d');
-    store.remove('d');
-    editor.removeTab('d');
-    layout.removeTab('d', order(), index);
-    diff.end();
-    const shown = layout.tabs.filter((id) => id !== null);
-    expect(new Set(shown).size).toBe(shown.length);
-    expect(layout.tabs.slice(0, 2)).toEqual(['a', 'c']);
-  });
-
-  it('比較中に分割数を変えた場合は、比較終了で配置を戻さない', () => {
-    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
-    layout.setCount(3, order());
-    expect(diff.active).toBe(true);
-    diff.end();
-    expect(layout.count).toBe(3);
-  });
-
-  it('差分の前後移動は端で折り返し、現在の差分だけを強調する', () => {
-    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
-    expect(diff.status?.current).toBe(0);
-    diff.next();
-    expect(diff.status?.current).toBe(1);
-    expect(marked(hosts[1], 'cm-diff-current')).toBe(1);
-    diff.next();
-    expect(diff.status?.current).toBe(0);
-    diff.previous();
-    expect(diff.status?.current).toBe(1);
-    diff.previous();
-    expect(diff.status?.current).toBe(0);
-  });
-
-  it('比較中の編集で差分を更新し、本文・Undo/Redo 履歴は保持される', () => {
-    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
-    expect(diff.status?.total).toBe(2);
-    // B の 2 行目を A と同じ内容にする（表示中のペインで編集）
-    editor.setActivePane(1);
-    editor.view.dispatch({
-      changes: { from: 4, to: 5, insert: 'two' },
-      userEvent: 'input.type',
+  describe('配置の計画とダイアログの初期値', () => {
+    it('1 ペインでは 3 ペインに拡張し、比較元は現在のタブ、比較先は別の既存タブ、結果表示は空にする', () => {
+      expect(diff.planLayout()).toEqual(['a', 'b', null]);
+      expect(diff.defaultTargets(diff.planLayout())).toEqual({ a: 0, b: 1, result: 2 });
+      // 拡張の計画を立てるだけでは、ペイン配置を変更しない
+      expect(layout.toJSON()).toEqual({ count: 1, tabs: ['a'], active: 0 });
     });
-    expect(docChanges).toEqual(['b']);
-    // 再計算は少し遅れて行う（入力のたびに計算しない）
-    expect(diff.status?.total).toBe(2);
-    vi.advanceTimersByTime(2000);
-    expect(diff.status).toMatchObject({ total: 1, added: 1, changed: 0 });
-    expect(editor.getContent('b')).toBe('one\ntwo\nthree\nfour');
 
-    expect(undo(editor.view)).toBe(true);
-    expect(editor.getContent('b')).toBe('one\n2\nthree\nfour');
-    vi.advanceTimersByTime(2000);
-    expect(diff.status?.total).toBe(2);
-    expect(redo(editor.view)).toBe(true);
-    expect(editor.getContent('b')).toBe('one\ntwo\nthree\nfour');
+    it('別のタブとして、内容のあるタブを優先する', () => {
+      addTab('empty', '');
+      layout.load({ count: 1, tabs: ['d'], active: 0 }, order(), true);
+      syncPanes();
+      expect(diff.planLayout()[1]).toBe('a');
+    });
 
-    // 比較を終了しても編集内容と履歴は残る
+    it('2 ペインでは 3 ペインにして、結果表示の初期値を 3 つ目にする。空のペインには別のタブを割り当てる', () => {
+      layout.load({ count: 2, tabs: ['c', 'd'], active: 1 }, order(), true);
+      syncPanes();
+      expect(diff.planLayout()).toEqual(['c', 'd', null]);
+      expect(diff.defaultTargets(diff.planLayout())).toEqual({ a: 0, b: 1, result: 2 });
+      layout.load({ count: 2, tabs: ['c', null], active: 0 }, order(), true);
+      syncPanes();
+      expect(diff.planLayout()).toEqual(['c', 'd', null]);
+    });
+
+    it('3・4 ペインでは既存の配置のまま、アクティブなペインを比較元にし、空のペインを結果表示にする', () => {
+      layout.load({ count: 4, tabs: ['a', 'b', null, 'd'], active: 3 }, order(), true);
+      syncPanes();
+      expect(diff.planLayout()).toEqual(['a', 'b', null, 'd']);
+      expect(diff.defaultTargets(diff.planLayout())).toEqual({ a: 3, b: 0, result: 2 });
+    });
+  });
+
+  describe('検証', () => {
+    const plan = ['a', 'b', 'c', null];
+
+    it('同じペインを複数の役割に指定できない', () => {
+      expect(diff.validate({ a: 0, b: 0, result: 2 }, plan)).toContain('別のペイン');
+      expect(diff.validate({ a: 0, b: 1, result: 1 }, plan)).toContain('別のペイン');
+      expect(diff.validate({ a: 0, b: 1, result: 0 }, plan)).toContain('別のペイン');
+      expect(diff.validate({ a: 0, b: 1, result: 9 }, plan)).toContain('ペインを指定');
+    });
+
+    it('比較元・比較先が空のペインなら、タブが必要であることを案内する', () => {
+      expect(diff.validate({ a: 3, b: 1, result: 2 }, plan)).toContain('比較元（ペイン 4）にはタブが表示されていません');
+      expect(diff.validate({ a: 0, b: 3, result: 2 }, plan)).toContain('比較先（ペイン 4）にはタブが表示されていません');
+    });
+
+    it('結果表示のペインは空でも、既存のタブがあってもよい', () => {
+      expect(diff.validate({ a: 0, b: 1, result: 3 }, plan)).toBeNull();
+      expect(diff.validate({ a: 0, b: 1, result: 2 }, plan)).toBeNull();
+    });
+
+    it('不正な指定では開始せず、ペイン配置も変更しない', () => {
+      const before = layout.toJSON();
+      expect(diff.start({ a: 0, b: 0, result: 2 }, diff.planLayout())).toBe(false);
+      expect(diff.start({ a: 0, b: 1, result: 5 }, diff.planLayout())).toBe(false);
+      expect(diff.active).toBe(false);
+      expect(layout.toJSON()).toEqual(before);
+    });
+  });
+
+  describe('1・2 ペインからの拡張', () => {
+    it('1 ペインから 3 ペインに拡張して比較し、終了すると 1 ペインに戻る', () => {
+      expect(begin()).toBe(true);
+      expect(layout.count).toBe(3);
+      expect(layout.tabs).toEqual(['a', 'b', null]);
+      expect(layout.active).toBe(0);
+      expect(diff.status).toMatchObject({ aTab: 'a', bTab: 'b', total: 2, changed: 1, added: 1, deleted: 0 });
+      expect(editor.hasOverlay(2)).toBe(true);
+      expect(lines(hosts[2])).toEqual(['@@ -2,1 +2,1 @@', '- two', '+ 2', '', '@@ -3,0 +4,1 @@', '+ four']);
+
+      diff.end();
+      expect(diff.active).toBe(false);
+      expect(layout.toJSON()).toEqual({ count: 1, tabs: ['a'], active: 0 });
+      expect(editor.hasOverlay(2)).toBe(false);
+      expect(notices).toEqual([]);
+    });
+
+    it('2 ペインから 3 ペインに拡張して比較し、終了すると 2 ペインに戻る', () => {
+      layout.load({ count: 2, tabs: ['a', 'b'], active: 1 }, order(), true);
+      syncPanes();
+      expect(begin()).toBe(true);
+      expect(layout.toJSON()).toEqual({ count: 3, tabs: ['a', 'b', null], active: 0 });
+      diff.end();
+      expect(layout.toJSON()).toEqual({ count: 2, tabs: ['a', 'b'], active: 1 });
+    });
+
+    it('タブや本文を複製・変更しない', () => {
+      const before = order();
+      begin();
+      expect(order()).toEqual(before);
+      expect(editor.getContent('a')).toBe('one\ntwo\nthree');
+      expect(editor.getContent('b')).toBe('one\n2\nthree\nfour');
+      diff.end();
+      expect(editor.getContent('a')).toBe('one\ntwo\nthree');
+      expect(editor.getContent('b')).toBe('one\n2\nthree\nfour');
+    });
+
+    it('結果表示のペインはタブとして扱わず、タブ配置には現れない', () => {
+      begin();
+      expect(layout.tabs[2]).toBeNull();
+      expect(editor.paneOfTab('a')).toBe(0);
+      expect(editor.activeTabId).toBe('a');
+      expect(order()).toEqual(['a', 'b', 'c', 'd']);
+    });
+  });
+
+  describe('3・4 ペインでの指定', () => {
+    it('任意の比較元・比較先・結果表示ペインを指定できる（他のペインは維持する）', () => {
+      layout.load({ count: 4, tabs: ['a', 'b', 'c', 'd'], active: 0 }, order(), true);
+      syncPanes();
+      expect(begin({ a: 3, b: 2, result: 0 })).toBe(true);
+      // 結果表示にしたペインのタブは一時的に非表示。他のペインはそのまま
+      expect(layout.tabs).toEqual([null, 'b', 'c', 'd']);
+      expect(layout.active).toBe(3);
+      expect(diff.status).toMatchObject({ aTab: 'd', bTab: 'c', a: 3, b: 2, result: 0 });
+      expect(lines(hosts[0])[0]).toMatch(/^@@/);
+      expect(noDiffMarks(hosts[1])).toBe(true);
+      expect(marked(hosts[3], 'cm-diff-chg')).toBe(1);
+    });
+
+    it('結果表示のペインに既存のタブがあっても、終了時に元のタブを本文・Undo 履歴ごと復元する', () => {
+      layout.load({ count: 3, tabs: ['a', 'b', 'c'], active: 2 }, order(), true);
+      syncPanes();
+      editor.setActivePane(2);
+      editor.view.dispatch({ changes: { from: 9, insert: '!' }, userEvent: 'input.type' });
+      expect(editor.getContent('c')).toBe('unrelated!');
+      begin({ a: 0, b: 1, result: 2 });
+      expect(layout.tabs).toEqual(['a', 'b', null]);
+      expect(editor.getContent('c')).toBe('unrelated!');
+      diff.end();
+      expect(layout.toJSON()).toEqual({ count: 3, tabs: ['a', 'b', 'c'], active: 2 });
+      expect(editor.getContent('c')).toBe('unrelated!');
+      expect(undo(editor.view)).toBe(true);
+      expect(editor.getContent('c')).toBe('unrelated');
+      expect(redo(editor.view)).toBe(true);
+      expect(editor.getContent('c')).toBe('unrelated!');
+    });
+
+    it('元々空だったペインは、アクティブな空ペインも含めて空のまま復元する', () => {
+      layout.load({ count: 4, tabs: ['a', null, 'c', 'd'], active: 1 }, order(), true);
+      syncPanes();
+      const before = layout.toJSON();
+      expect(begin({ a: 3, b: 0, result: 1 })).toBe(true);
+      expect(layout.active).toBe(3);
+      diff.end();
+      expect(layout.toJSON()).toEqual(before);
+      expect(layout.tabs).toEqual(['a', null, 'c', 'd']);
+      expect(layout.active).toBe(1);
+      expect(editor.hasOverlay(1)).toBe(false);
+    });
+
+    it('比較元・比較先に空のペインを指定すると開始できない', () => {
+      layout.load({ count: 3, tabs: ['a', null, 'c'], active: 0 }, order(), true);
+      syncPanes();
+      const before = layout.toJSON();
+      const plan = diff.planLayout();
+      expect(diff.start({ a: 0, b: 1, result: 2 }, plan)).toBe(false);
+      expect(layout.toJSON()).toEqual(before);
+    });
+
+    it('比較中に分割数を増やした場合は、比較を続け、終了時に配置を戻さない', () => {
+      layout.load({ count: 3, tabs: ['a', 'b', 'c'], active: 0 }, order(), true);
+      syncPanes();
+      begin({ a: 0, b: 1, result: 2 });
+      layout.setCount(4, order());
+      expect(diff.active).toBe(true);
+      diff.end();
+      expect(layout.count).toBe(4);
+      expect(layout.tabs.slice(0, 2)).toEqual(['a', 'b']);
+    });
+
+    it('比較中に分割数を増やした場合も、結果表示のために外したタブは、どこにも表示されていなければ元のペインに戻す', () => {
+      layout.load({ count: 3, tabs: ['a', 'b', 'c'], active: 0 }, order(), true);
+      syncPanes();
+      begin({ a: 0, b: 1, result: 2 });
+      layout.setCount(4, ['a', 'b']); // 追加したペインには、外したタブ以外が割り当てられる
+      expect(layout.tabs).toEqual(['a', 'b', null, null]);
+      diff.end();
+      expect(layout.tabs).toEqual(['a', 'b', 'c', null]);
+    });
+
+    it('比較中に対象を変更しても、比較開始前の配置を覚えている', () => {
+      layout.load({ count: 4, tabs: ['a', 'b', 'c', 'd'], active: 0 }, order(), true);
+      syncPanes();
+      const before = layout.toJSON();
+      begin({ a: 0, b: 1, result: 2 });
+      expect(layout.tabs).toEqual(['a', 'b', null, 'd']);
+      // 結果表示を別のペインに変更すると、前の結果表示ペインのタブは元に戻る
+      expect(begin({ a: 0, b: 1, result: 3 })).toBe(true);
+      expect(layout.tabs).toEqual(['a', 'b', 'c', null]);
+      expect(diff.planLayout()).toEqual(['a', 'b', 'c', 'd']);
+      diff.end();
+      expect(layout.toJSON()).toEqual(before);
+    });
+  });
+
+  describe('差分結果の表示', () => {
+    it('追加・削除・変更を、行番号付きの統一差分で表示する', () => {
+      addTab('x', 'timeout=30\nretry=3\ndebug=false');
+      addTab('y', 'timeout=60\nretry=3\ndebug=true\ncache=true');
+      layout.load({ count: 3, tabs: ['x', 'y', null], active: 0 }, order(), true);
+      syncPanes();
+      begin();
+      expect(lines(hosts[2])).toEqual([
+        '@@ -1,1 +1,1 @@',
+        '- timeout=30',
+        '+ timeout=60',
+        '',
+        '@@ -3,1 +3,2 @@',
+        '- debug=false',
+        '+ debug=true',
+        '+ cache=true',
+      ]);
+      expect(marked(hosts[2], 'cm-diff-r-del')).toBe(2);
+      expect(marked(hosts[2], 'cm-diff-r-add')).toBe(3);
+      expect(marked(hosts[2], 'cm-diff-hunk')).toBe(2);
+      // 行番号（比較元・比較先）を 2 つのガターに表示する
+      const gutters = hosts[2].querySelectorAll('.cm-diff-gutter');
+      expect(gutters).toHaveLength(2);
+      expect(gutters[0].textContent).toContain('3');
+      // 比較元・比較先のペインにも差分を表示する
+      expect(marked(hosts[0], 'cm-diff-chg')).toBe(2);
+      expect(marked(hosts[1], 'cm-diff-chg')).toBe(3);
+    });
+
+    it('内容が同じ場合は「差分はありません」と表示する', () => {
+      editor.applyToTab('c', (s) => ({ changes: { from: 0, to: s.doc.length, insert: 'one\ntwo\nthree' } }));
+      layout.load({ count: 3, tabs: ['a', 'c', null], active: 0 }, order(), true);
+      syncPanes();
+      begin();
+      expect(diff.status).toMatchObject({ total: 0, current: -1 });
+      expect(lines(hosts[2])).toEqual(['差分はありません']);
+      expect(noDiffMarks(hosts[0])).toBe(true);
+      diff.next();
+      diff.previous();
+      expect(diff.status?.current).toBe(-1);
+    });
+
+    it('空文書どうし、空文書との比較も扱える', () => {
+      addTab('e1', '');
+      addTab('e2', '');
+      layout.load({ count: 3, tabs: ['e1', 'e2', null], active: 0 }, order(), true);
+      syncPanes();
+      begin();
+      expect(lines(hosts[2])).toEqual(['差分はありません']);
+      diff.end();
+      layout.load({ count: 3, tabs: ['e1', 'a', null], active: 0 }, order(), true);
+      syncPanes();
+      begin();
+      expect(lines(hosts[2])).toEqual(['@@ -0,0 +1,3 @@', '+ one', '+ two', '+ three']);
+    });
+
+    it('日本語のテキストを比較できる', () => {
+      addTab('ja1', 'こんにちは世界\nさようなら');
+      addTab('ja2', 'こんばんは世界\nさようなら');
+      layout.load({ count: 3, tabs: ['ja1', 'ja2', null], active: 0 }, order(), true);
+      syncPanes();
+      begin();
+      expect(lines(hosts[2])).toEqual(['@@ -1,1 +1,1 @@', '- こんにちは世界', '+ こんばんは世界']);
+      expect(hosts[2].querySelectorAll('.cm-diff-text-del, .cm-diff-text-add').length).toBeGreaterThan(0);
+    });
+
+    it('結果表示は読み取り専用で、ペイン見出しに結果であることが分かる属性を持つ', () => {
+      begin();
+      editor.setActivePane(2);
+      expect(editor.view.state.readOnly).toBe(true);
+      expect(hosts[2].querySelector('.cm-content')?.getAttribute('aria-label')).toBe('差分結果（読み取り専用）');
+    });
+  });
+
+  describe('差分のナビゲーション', () => {
+    it('前後に移動し（端で折り返す）、選択中の差分を結果表示・比較元・比較先で強調する', () => {
+      begin();
+      expect(diff.status?.current).toBe(0);
+      expect(marked(hosts[2], 'cm-diff-current')).toBe(3); // 見出し + - + +
+      expect(marked(hosts[0], 'cm-diff-current')).toBe(1);
+      diff.next();
+      expect(diff.status?.current).toBe(1);
+      expect(marked(hosts[2], 'cm-diff-current')).toBe(2); // 見出し + +
+      expect(hosts[2].querySelector('.cm-diff-current')?.textContent).toBe('@@ -3,0 +4,1 @@');
+      diff.next();
+      expect(diff.status?.current).toBe(0);
+      diff.previous();
+      expect(diff.status?.current).toBe(1);
+      diff.previous();
+      expect(diff.status?.current).toBe(0);
+    });
+
+    it('結果の差分を選ぶ（クリック相当）と、比較元・比較先の対応する位置を表示する', () => {
+      const reveal = vi.spyOn(editor, 'revealLine');
+      begin();
+      reveal.mockClear();
+      diff.goTo(1, false);
+      expect(diff.status?.current).toBe(1);
+      expect(reveal).toHaveBeenCalledWith('a', 4);
+      expect(reveal).toHaveBeenCalledWith('b', 4);
+    });
+  });
+
+  describe('編集への追従', () => {
+    it('比較元・比較先を編集すると、差分結果を少し遅れて更新する（Undo/Redo の履歴も保持する）', () => {
+      begin();
+      expect(diff.status?.total).toBe(2);
+      editor.setActivePane(1);
+      editor.view.dispatch({ changes: { from: 4, to: 5, insert: 'two' }, userEvent: 'input.type' });
+      // 入力のたびには再計算しない
+      expect(diff.status?.total).toBe(2);
+      vi.advanceTimersByTime(2000);
+      expect(diff.status).toMatchObject({ total: 1, added: 1, changed: 0 });
+      expect(lines(hosts[2])).toEqual(['@@ -3,0 +4,1 @@', '+ four']);
+
+      expect(undo(editor.view)).toBe(true);
+      expect(editor.getContent('b')).toBe('one\n2\nthree\nfour');
+      vi.advanceTimersByTime(2000);
+      expect(diff.status?.total).toBe(2);
+      expect(redo(editor.view)).toBe(true);
+      vi.advanceTimersByTime(2000);
+      expect(diff.status?.total).toBe(1);
+
+      // 比較を終了しても編集内容と履歴は残り、結果の更新が本文を変えることもない
+      diff.end();
+      expect(editor.getContent('b')).toBe('one\ntwo\nthree\nfour');
+      expect(editor.getContent('a')).toBe('one\ntwo\nthree');
+      layout.show('b', 0, true);
+      expect(undo(editor.view)).toBe(true);
+      expect(editor.getContent('b')).toBe('one\n2\nthree\nfour');
+    });
+
+    it('差分表示・結果の更新は、本文の変更履歴に入らない', () => {
+      editor.applyToTab('a', (s) => ({ changes: { from: s.doc.length, insert: '!' }, userEvent: 'input.type' }));
+      begin();
+      diff.next();
+      vi.advanceTimersByTime(2000);
+      diff.end();
+      expect(editor.getContent('a')).toBe('one\ntwo\nthree!');
+      expect(undo(editor.view)).toBe(true);
+      expect(editor.getContent('a')).toBe('one\ntwo\nthree');
+      expect(undo(editor.view)).toBe(false);
+    });
+
+    it('結果表示は、比較終了後に再計算のタイマーが動かない', () => {
+      begin();
+      editor.applyToTab('a', (s) => ({ changes: { from: s.doc.length, insert: 'x' } }));
+      diff.end();
+      vi.advanceTimersByTime(5000);
+      expect(noDiffMarks(hosts[0])).toBe(true);
+      expect(diff.status).toBeNull();
+    });
+
+    it('日本語を含む大きめのファイルでも比較できる', () => {
+      const big = Array.from({ length: 20000 }, (_, i) => `行${i}：これは日本語のテキストです。`);
+      const edited = [...big];
+      edited[100] = '行100：変更された日本語のテキストです。';
+      edited.splice(15000, 1);
+      editor.applyToTab('c', (s) => ({ changes: { from: 0, to: s.doc.length, insert: big.join('\n') } }));
+      editor.applyToTab('d', (s) => ({ changes: { from: 0, to: s.doc.length, insert: edited.join('\n') } }));
+      layout.load({ count: 3, tabs: ['c', 'd', null], active: 0 }, order(), true);
+      syncPanes();
+      const t0 = performance.now();
+      begin();
+      expect(performance.now() - t0).toBeLessThan(3000);
+      expect(diff.status).toMatchObject({ total: 2, changed: 1, deleted: 1 });
+    });
+  });
+
+  describe('比較を続けられない操作', () => {
+    const closeTab = (id: string) => {
+      const index = store.indexOf(id);
+      store.remove(id);
+      editor.removeTab(id);
+      layout.removeTab(id, order(), index);
+    };
+
+    it('比較中のタブが閉じられたら、安全に終了し、結果表示のペインを元のタブに戻す', () => {
+      layout.load({ count: 3, tabs: ['a', 'b', 'c'], active: 0 }, order(), true);
+      syncPanes();
+      begin({ a: 0, b: 1, result: 2 });
+      closeTab('b');
+      expect(diff.active).toBe(false);
+      expect(notices.join()).toContain('閉じられた');
+      expect(editor.hasOverlay(2)).toBe(false);
+      // 閉じたタブのペインには近くのタブが表示される。結果表示のペインは元のタブに戻る（重複して表示しない）
+      const shown = layout.tabs.filter((id) => id !== null);
+      expect(new Set(shown).size).toBe(shown.length);
+      expect(shown).toContain('c');
+      expect(noDiffMarks(hosts[0])).toBe(true);
+      expect(editor.getContent('a')).toBe('one\ntwo\nthree');
+    });
+
+    it('比較元のペインの表示が変わったら終了する', () => {
+      begin();
+      layout.show('c', 0, true);
+      expect(diff.active).toBe(false);
+      expect(notices.join()).toContain('表示が変わった');
+      expect(editor.hasOverlay(2)).toBe(false);
+    });
+
+    it('比較中のタブが閉じられても、結果表示のペインが空のままなら、元のタブを戻す', () => {
+      layout.load({ count: 3, tabs: ['a', 'b', 'c'], active: 0 }, order(), true);
+      syncPanes();
+      begin({ a: 0, b: 1, result: 2 });
+      closeTab('a');
+      expect(diff.active).toBe(false);
+      expect(layout.tabs[2] === 'c' || layout.tabs.includes('c')).toBe(true);
+      expect(editor.hasOverlay(2)).toBe(false);
+    });
+
+    it('結果表示のペインにタブが表示されたら、そのタブを優先して終了する（元のタブで上書きしない）', () => {
+      layout.load({ count: 3, tabs: ['a', 'b', 'c'], active: 0 }, order(), true);
+      syncPanes();
+      begin({ a: 0, b: 1, result: 2 });
+      layout.show('d', 2, true);
+      expect(diff.active).toBe(false);
+      expect(layout.tabs).toEqual(['a', 'b', 'd']);
+      expect(editor.hasOverlay(2)).toBe(false);
+      expect(hosts[2].querySelector('.cm-content')?.textContent).toBe('dddd');
+      expect(editor.getContent('c')).toBe('unrelated');
+    });
+
+    it('分割数を減らして結果表示のペインがなくなったら終了する', () => {
+      begin();
+      layout.setCount(2, order());
+      expect(diff.active).toBe(false);
+      expect(editor.hasOverlay(2)).toBe(false);
+    });
+
+    it('アクティブなペインの切り替えや、比較に使わないペインの操作では終了しない', () => {
+      layout.load({ count: 4, tabs: ['a', 'b', null, 'd'], active: 0 }, order(), true);
+      syncPanes();
+      begin({ a: 0, b: 1, result: 2 });
+      layout.setActive(2);
+      layout.setActive(3);
+      layout.show('c', 3, true);
+      expect(diff.active).toBe(true);
+      expect(notices).toEqual([]);
+    });
+
+    it('比較に使っていないタブが閉じられても比較を続け、終了時は現在の表示で補う', () => {
+      layout.load({ count: 4, tabs: ['a', 'b', null, 'c'], active: 0 }, order(), true);
+      syncPanes();
+      begin({ a: 0, b: 1, result: 2 });
+      closeTab('c');
+      expect(diff.active).toBe(true);
+      diff.end();
+      expect(layout.tabs.slice(0, 2)).toEqual(['a', 'b']);
+      expect(new Set(layout.tabs.filter((id) => id)).size).toBe(layout.tabs.filter((id) => id).length);
+    });
+
+    it('タブをすべて入れ替える操作（バックアップ復元）では、比較を終了できる', () => {
+      begin();
+      editor.clear();
+      diff.end(false);
+      expect(diff.active).toBe(false);
+      expect(editor.hasOverlay(2)).toBe(false);
+      expect(notices).toEqual([]);
+    });
+  });
+
+  describe('保存', () => {
+    it('比較中の保存用の配置には、結果表示のために外したタブを元のペインに戻して含める', () => {
+      layout.load({ count: 3, tabs: ['a', 'b', 'c'], active: 0 }, order(), true);
+      syncPanes();
+      begin({ a: 0, b: 1, result: 2 });
+      expect(layout.tabs[2]).toBeNull();
+      expect(diff.layoutForSave()).toEqual({ count: 3, tabs: ['a', 'b', 'c'], active: 0 });
+      diff.end();
+      expect(diff.layoutForSave()).toEqual(layout.toJSON());
+    });
+
+    it('結果表示がタブとして登録されることはない', () => {
+      begin();
+      expect(store.all.map((t) => t.id)).toEqual(['a', 'b', 'c', 'd']);
+      expect(layout.tabs.filter((t) => t !== null && !store.get(t))).toEqual([]);
+    });
+  });
+
+  it('比較の通知を購読できる', () => {
+    const totals: (number | undefined)[] = [];
+    diff.events.on('change', () => totals.push(diff.status?.total));
+    begin();
     diff.end();
-    expect(editor.getContent('b')).toBe('one\ntwo\nthree\nfour');
-    layout.show('b', 0, true);
-    expect(undo(editor.view)).toBe(true);
-    expect(editor.getContent('b')).toBe('one\n2\nthree\nfour');
-  });
-
-  it('差分の強調表示は本文の変更履歴に入らない（比較の開始・終了・移動で Undo の内容が変わらない）', () => {
-    editor.setActivePane(0);
-    type('a', '!');
-    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
-    diff.next();
-    diff.end();
-    expect(editor.getContent('a')).toBe('one\ntwo\nthree!');
-    editor.setActivePane(0);
-    expect(undo(editor.view)).toBe(true);
-    expect(editor.getContent('a')).toBe('one\ntwo\nthree');
-    expect(undo(editor.view)).toBe(false);
-  });
-
-  it('比較中のタブが閉じられたら、比較を安全に終了する', () => {
-    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
-    // App.onStoreChange 'remove' 相当
-    const index = store.indexOf('b');
-    store.remove('b');
-    editor.removeTab('b');
-    layout.removeTab('b', order(), index);
-    expect(diff.active).toBe(false);
-    expect(notices.join()).toContain('閉じられた');
-    expect(editor.hasTab('a')).toBe(true);
-    expect(hosts[0].querySelectorAll('[class*="cm-diff-"]').length).toBe(0);
-    expect(editor.getContent('a')).toBe('one\ntwo\nthree');
-  });
-
-  it('比較中のペインの表示が変わったら、比較を終了する', () => {
-    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
-    layout.show('c', 1, true);
-    expect(diff.active).toBe(false);
-    expect(notices.join()).toContain('表示が変わった');
-    expect(layout.tabs).toEqual(['a', 'c']);
-    expect(hosts[0].querySelectorAll('[class*="cm-diff-"]').length).toBe(0);
-  });
-
-  it('比較に使っていないペインの操作・アクティブなペインの切り替えでは終了しない', () => {
-    layout.setCount(3, order());
-    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
-    layout.show('d', 2, true);
-    layout.setActive(1);
-    expect(diff.active).toBe(true);
-    expect(notices).toEqual([]);
-  });
-
-  it('比較の対象外のタブが閉じられても、比較を続け、終了時は現在の表示で補う', () => {
-    layout.setCount(3, order());
-    layout.show('c', 2, false);
-    const before = layout.toJSON();
-    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
-    const index = store.indexOf('c');
-    store.remove('c');
-    editor.removeTab('c');
-    layout.removeTab('c', order(), index);
-    expect(diff.active).toBe(true);
-    diff.end();
-    expect(layout.count).toBe(before.count);
-    expect(layout.tabs.slice(0, 2)).toEqual(['a', 'b']);
-  });
-
-  it('タブをすべて入れ替える操作（バックアップ復元）では比較を終了できる', () => {
-    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
-    editor.clear();
-    diff.end(false);
-    expect(diff.active).toBe(false);
-    expect(notices).toEqual([]);
-  });
-
-  it('比較終了後は再計算のタイマーが動かない', () => {
-    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
-    type('a', 'x');
-    diff.end();
-    vi.advanceTimersByTime(5000);
-    expect(hosts[0].querySelectorAll('[class*="cm-diff-"]').length).toBe(0);
-    expect(diff.status).toBeNull();
-  });
-
-  it('比較中の通知を購読できる', () => {
-    const events: (number | undefined)[] = [];
-    diff.events.on('change', () => events.push(diff.status?.total));
-    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
-    diff.end();
-    expect(events.at(0)).toBe(2);
-    expect(events.at(-1)).toBeUndefined();
-  });
-
-  it('日本語・大きめのファイルでも比較できる', () => {
-    const lines = Array.from({ length: 20000 }, (_, i) => `行${i}：これは日本語のテキストです。`);
-    const edited = [...lines];
-    edited[100] = '行100：変更された日本語のテキストです。';
-    edited.splice(15000, 1);
-    editor.applyToTab('c', (s) => ({ changes: { from: 0, to: s.doc.length, insert: lines.join('\n') } }));
-    editor.applyToTab('d', (s) => ({ changes: { from: 0, to: s.doc.length, insert: edited.join('\n') } }));
-    const t0 = performance.now();
-    diff.start({ a: 'c', b: 'd', paneA: 0, paneB: 1 });
-    expect(performance.now() - t0).toBeLessThan(3000);
-    expect(diff.status).toMatchObject({ total: 2, changed: 1, deleted: 1 });
+    expect(totals.at(0)).toBe(2);
+    expect(totals.at(-1)).toBeUndefined();
   });
 });
