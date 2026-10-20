@@ -40,6 +40,8 @@ const COMMAND_LABELS: Record<CommandId, string> = {
   renameTab: 'タブ名の変更',
   toggleWrap: '右端で折り返す',
   togglePreview: 'Markdown プレビュー',
+  diffNext: '次の差分',
+  diffPrev: '前の差分',
   focusPane1: 'ペイン 1 へ移動',
   focusPane2: 'ペイン 2 へ移動',
   focusPane3: 'ペイン 3 へ移動',
@@ -162,6 +164,16 @@ export function buildMenus(app: App): MenuDefinition[] {
           ? (['focusPane1', 'focusPane2', 'focusPane3', 'focusPane4'] as const)
               .slice(0, app.layout.count)
               .map((c) => cmd(c, undefined, { checked: app.layout.active === Number(c.slice(-1)) - 1 }))
+          : []),
+        { separator: true },
+        { heading: '差分比較（2 つのタブを並べて比較）' },
+        { label: '差分比較…', action: () => void app.openDiffDialog() },
+        ...(app.diff.active
+          ? [
+              cmd('diffPrev'),
+              cmd('diffNext'),
+              { label: '比較終了', action: () => app.endDiff() } as MenuItem,
+            ]
           : []),
         { separator: true },
         { label: '文字を大きく', shortcut: `${s().fontSize}px`, action: () => app.changeFontSize(1) },

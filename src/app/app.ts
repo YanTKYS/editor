@@ -19,6 +19,8 @@ import { SCHEMA_VERSION } from '../storage/schema';
 import { confirmDialog, isDialogOpen, promptDialog, showDialog } from '../ui/dialogs';
 import { h } from '../ui/dom';
 import { FindPanel } from '../ui/findPanel';
+import { DiffBar } from '../ui/diffBar';
+import { showDiffDialog } from '../ui/diffDialog';
 import { MenuBar } from '../ui/menuBar';
 import { Notifications } from '../ui/notifications';
 import { PaneArea } from '../ui/paneArea';
@@ -26,6 +28,7 @@ import { closePopup, PopupMenu, type MenuItem } from '../ui/popupMenu';
 import { MarkdownPreview } from '../ui/preview';
 import { StatusBar } from '../ui/statusBar';
 import { TabBar } from '../ui/tabBar';
+import { DiffController, type DiffTargets } from './diffController';
 import { FileCommands } from './fileCommands';
 import { buildMenus, buildToolbar } from './menus';
 import { SearchController } from './searchController';
@@ -64,6 +67,9 @@ export class App {
   tabBar!: TabBar;
   menuBar!: MenuBar;
   paneArea!: PaneArea;
+  /** 差分比較（既存のタブ・ペインに差分表示を付加する） */
+  diff!: DiffController;
+  diffBar!: DiffBar;
   readonly search: SearchController;
   readonly files: FileCommands;
 
@@ -139,6 +145,12 @@ export class App {
       dropTab: (id, i) => this.showTabInPane(id, i, true),
       pickTab: (i, anchor) => this.showPanePicker(i, anchor),
     });
+    this.diffBar = new DiffBar({
+      previous: () => this.diff.previous(),
+      next: () => this.diff.next(),
+      change: () => void this.openDiffDialog(),
+      end: () => this.endDiff(),
+    });
     this.splitter = h('div', {
       class: 'splitter',
       attrs: {
@@ -149,7 +161,7 @@ export class App {
       },
     });
     const split = h('div', { class: 'split' }, [this.paneArea.el, this.splitter, this.preview.el]);
-    this.workspace = h('main', { class: 'workspace' }, [this.findPanel.el, split, this.findPanel.resultsEl]);
+    this.workspace = h('main', { class: 'workspace' }, [this.findPanel.el, this.diffBar.el, split, this.findPanel.resultsEl]);
     this.dropOverlay = h('div', { class: 'drop-overlay', attrs: { 'aria-hidden': 'true' } }, [
       h('div', { class: 'drop-message', text: 'ドロップしてファイルを開く' }),
     ]);
@@ -173,6 +185,14 @@ export class App {
     this.setupSplitter();
     this.store.events.on('change', (c) => this.onStoreChange(c));
     this.layout.events.on('change', () => this.syncPanes());
+    // ペイン配置の変更を先に画面へ反映してから、比較を続けられるかを判定する
+    this.diff = new DiffController({
+      layout: this.layout,
+      store: this.store,
+      editor: this.editor,
+      notify: (message) => this.notifications.toast(message),
+    });
+    this.diff.events.on('change', () => this.updateDiffUi());
     this.persistence.events.on('status', (s) => this.onSaveStatus(s));
   }
 
@@ -244,6 +264,7 @@ export class App {
         }
         if (c.keys.includes('name') || c.keys.includes('modifiedSinceFile')) {
           this.paneArea.render(this.layout, this.store);
+          if (c.keys.includes('name') && this.diff.active) this.updateDiffUi();
         }
         if (c.id === this.store.activeTabId) {
           this.updateTitle();
@@ -257,6 +278,8 @@ export class App {
         this.onActiveTabChanged();
         break;
       case 'reset':
+        // タブがすべて入れ替わるため、差分比較は続けられない
+        this.diff.end(false);
         // ペインの配置は呼び出し側で設定済み（保存データ・バックアップの配置を空のペインも含めてそのまま使う）。
         // ここでは存在しないタブを外すだけで、空のペインへの補完は行わない
         this.layout.reconcile(this.store.all.map((t) => t.id));
@@ -270,6 +293,7 @@ export class App {
   }
 
   private onDocChange(id: string): void {
+    this.diff.onDocChange(id);
     this.persistence.markTabDirty(id);
     const tab = this.store.get(id);
     if (tab && !tab.modifiedSinceFile) this.store.update(id, { modifiedSinceFile: true });
@@ -297,6 +321,7 @@ export class App {
 
   private onEditorScroll(id: string): void {
     this.cursorDirty = true;
+    this.diff.onScroll(id);
     if (id !== this.store.activeTabId) return;
     if (!this.preview.visible) return;
     const s = this.editor.view.scrollDOM;
@@ -418,6 +443,12 @@ export class App {
       case 'togglePreview':
         this.togglePreview();
         break;
+      case 'diffNext':
+        this.diff.next();
+        break;
+      case 'diffPrev':
+        this.diff.previous();
+        break;
       case 'focusPane1':
       case 'focusPane2':
       case 'focusPane3':
@@ -495,6 +526,78 @@ export class App {
     if (pane >= this.layout.count) return;
     this.layout.setActive(pane);
     this.editor.focus();
+  }
+
+  /* ====================================================================== */
+  /* 差分比較                                                                */
+  /* ====================================================================== */
+
+  /** 比較するタブを選んで差分比較を開始する（比較中なら対象を変更する） */
+  async openDiffDialog(): Promise<void> {
+    if (this.store.count < 2) {
+      this.notifications.toast('差分比較には 2 つ以上のタブが必要です。');
+      return;
+    }
+    const targets = await showDiffDialog({
+      tabs: this.store.all,
+      paneCount: this.layout.count,
+      initial: this.defaultDiffTargets(),
+      validate: (t) => this.diff.validate(t),
+    });
+    if (!targets || !this.diff.start(targets)) return;
+    this.editor.focus();
+  }
+
+  endDiff(): void {
+    this.diff.end(true);
+    this.editor.focus();
+  }
+
+  /** ダイアログの初期値: 比較中なら現在の対象。そうでなければアクティブなタブと、隣のペインまたは次のタブ */
+  private defaultDiffTargets(): DiffTargets {
+    const status = this.diff.status;
+    if (status) return { a: status.a, b: status.b, paneA: status.paneA, paneB: status.paneB };
+    const { layout, store } = this;
+    const ids = store.all.map((t) => t.id);
+    const paneA = layout.count === 1 ? 0 : layout.active;
+    const paneB = layout.count === 1 ? 1 : this.nextPaneWithTab(paneA);
+    const a = layout.tabs[paneA] ?? store.activeTabId ?? ids[0];
+    const shown = layout.count > 1 ? layout.tabs[paneB] : null;
+    let b = shown && shown !== a ? shown : null;
+    if (!b) {
+      const start = ids.indexOf(a);
+      b = ids[(start + 1) % ids.length] === a ? ids[0] : ids[(start + 1) % ids.length];
+    }
+    return { a, b, paneA, paneB };
+  }
+
+  /** 指定のペインの次（右）にある、タブを表示しているペイン。なければ単に次のペイン */
+  private nextPaneWithTab(pane: number): number {
+    const { count, tabs } = this.layout;
+    for (let k = 1; k < count; k++) {
+      const i = (pane + k) % count;
+      if (tabs[i]) return i;
+    }
+    return (pane + 1) % count;
+  }
+
+  private updateDiffUi(): void {
+    const st = this.diff.status;
+    const name = (id: string) => this.store.get(id)?.name ?? '';
+    this.diffBar.update(
+      st && {
+        aName: name(st.a),
+        bName: name(st.b),
+        added: st.added,
+        deleted: st.deleted,
+        changed: st.changed,
+        total: st.total,
+        current: st.current,
+        precise: st.precise,
+      },
+    );
+    this.paneArea.setDiffRoles(this.diff.panes);
+    this.editor.requestMeasure();
   }
 
   /** ペインに表示するタブを選ぶメニュー */

@@ -1,6 +1,6 @@
 {
   "name": "web-text-editor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "CodeMirror 6 ベースのタブ型 Web テキストエディタ",
   "type": "module",
@@ -27,6 +27,7 @@
     "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/lang-xml": "^6.1.0",
     "@codemirror/language": "^6.13.1",
+    "@codemirror/merge": "^6.12.3",
     "@codemirror/search": "^6.7.2",
     "@codemirror/state": "^6.7.6",
     "@codemirror/theme-one-dark": "^6.1.3",

@@ -48,6 +48,17 @@
   --editor-search-current: #ffb74d;
   --editor-selection-match: #e2e8c8;
   --editor-whitespace: #b0b0b0;
+
+  /* 差分比較（背景は選択範囲が透けて見えるよう半透明にする） */
+  --diff-add-bg: rgb(46 160 67 / 0.16);
+  --diff-del-bg: rgb(215 58 73 / 0.14);
+  --diff-chg-bg: rgb(212 150 20 / 0.18);
+  --diff-add-text: rgb(46 160 67 / 0.4);
+  --diff-del-text: rgb(215 58 73 / 0.36);
+  --diff-add-bar: #2ea043;
+  --diff-del-bar: #d73a49;
+  --diff-chg-bar: #d49614;
+  --diff-current: #1a73e8;
 }
 
 :root[data-theme='dark'] {
@@ -91,6 +102,16 @@
   --editor-search-current: #8a5a12;
   --editor-selection-match: #3a3f2e;
   --editor-whitespace: #5a5f66;
+
+  --diff-add-bg: rgb(63 185 80 / 0.17);
+  --diff-del-bg: rgb(248 81 73 / 0.17);
+  --diff-chg-bg: rgb(210 153 34 / 0.2);
+  --diff-add-text: rgb(63 185 80 / 0.45);
+  --diff-del-text: rgb(248 81 73 / 0.42);
+  --diff-add-bar: #3fb950;
+  --diff-del-bar: #f85149;
+  --diff-chg-bar: #d29922;
+  --diff-current: #6ea8fe;
 }
 
 /* ==========================================================================
@@ -671,6 +692,149 @@ select {
 /* 分割時のみ、アクティブなペインの編集領域を区別する */
 .pane-grid:not([data-count='1']) .pane:not(.active) .cm-activeLine {
   background: transparent;
+}
+
+/* ==========================================================================
+   差分比較
+   ========================================================================== */
+.diff-bar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 28px;
+  padding: 2px 8px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.diff-bar[hidden] {
+  display: none;
+}
+
+.diff-label {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.diff-names {
+  min-width: 0;
+  max-width: 40ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-summary {
+  color: var(--fg-muted);
+}
+
+.diff-position {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.diff-spacer {
+  flex: 1;
+}
+
+.diff-button {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--editor-bg);
+  cursor: default;
+}
+
+.diff-button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.diff-button:disabled {
+  opacity: 0.5;
+}
+
+.pane-diff-badge {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+/* 行の背景（左の帯と半透明の色で、色の違いが分かりにくい場合も区別できるようにする） */
+.editor-host .cm-line.cm-diff-add,
+.editor-host .cm-line.cm-diff-del,
+.editor-host .cm-line.cm-diff-chg {
+  background-repeat: no-repeat;
+  background-size: 3px 100%;
+}
+
+.editor-host .cm-line.cm-diff-add {
+  background-color: var(--diff-add-bg);
+  background-image: linear-gradient(var(--diff-add-bar), var(--diff-add-bar));
+}
+
+.editor-host .cm-line.cm-diff-del {
+  background-color: var(--diff-del-bg);
+  background-image: linear-gradient(var(--diff-del-bar), var(--diff-del-bar));
+}
+
+.editor-host .cm-line.cm-diff-chg {
+  background-color: var(--diff-chg-bg);
+  background-image: linear-gradient(var(--diff-chg-bar), var(--diff-chg-bar));
+}
+
+/* 行内の異なる文字 */
+.cm-diff-text-add {
+  background: var(--diff-add-text);
+  border-radius: 2px;
+}
+
+.cm-diff-text-del {
+  background: var(--diff-del-text);
+  border-radius: 2px;
+}
+
+/* 相手側にだけ行がある位置 */
+.editor-host .cm-line.cm-diff-gap-before {
+  box-shadow: inset 0 2px 0 var(--diff-chg-bar);
+}
+
+.editor-host .cm-line.cm-diff-gap-after {
+  box-shadow: inset 0 -2px 0 var(--diff-chg-bar);
+}
+
+/* 前後移動で選択中の差分 */
+.editor-host .cm-line.cm-diff-current {
+  outline: 1px solid var(--diff-current);
+  outline-offset: -1px;
+}
+
+.editor-host .cm-line.cm-diff-gap-before.cm-diff-current {
+  box-shadow: inset 0 3px 0 var(--diff-current);
+  outline: none;
+}
+
+.editor-host .cm-line.cm-diff-gap-after.cm-diff-current {
+  box-shadow: inset 0 -3px 0 var(--diff-current);
+  outline: none;
+}
+
+.diff-dialog-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: min(360px, 80vw);
+}
+
+.diff-dialog-fields .dialog-note {
+  margin: 0;
 }
 
 /* ツールバーの分割切り替え */
