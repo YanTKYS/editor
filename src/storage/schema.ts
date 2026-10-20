@@ -75,7 +75,9 @@ function parseTab(raw: unknown): PersistedTabMeta | null {
  * v1 は 1 画面のみのため、アクティブタブを 1 画面に表示した状態とする。
  */
 function migrateV1toV2(raw: Record<string, unknown>): Record<string, unknown> {
-  const activeTabId = typeof raw.activeTabId === 'string' ? raw.activeTabId : null;
+  const firstTab = Array.isArray(raw.tabs) && isObject(raw.tabs[0]) ? raw.tabs[0].id : null;
+  const activeTabId =
+    typeof raw.activeTabId === 'string' ? raw.activeTabId : typeof firstTab === 'string' ? firstTab : null;
   return { ...raw, schemaVersion: 2, layout: { count: 1, tabs: [activeTabId], active: 0 } };
 }
 

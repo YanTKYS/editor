@@ -256,19 +256,13 @@ export class App {
       case 'activate':
         this.onActiveTabChanged();
         break;
-      case 'reset': {
-        // 存在しないタブをペインから外し、アクティブなペインが空ならアクティブタブを表示する
+      case 'reset':
+        // ペインの配置は呼び出し側で設定済み（保存データ・バックアップの配置を空のペインも含めてそのまま使う）。
+        // ここでは存在しないタブを外すだけで、空のペインへの補完は行わない
         this.layout.reconcile(this.store.all.map((t) => t.id));
-        const preferred = this.store.activeTabId;
-        if (!this.layout.activeTabId && preferred) {
-          const pane = this.layout.paneOf(preferred);
-          if (pane >= 0) this.layout.setActive(pane);
-          else this.layout.show(preferred);
-        }
         this.syncPanes();
         this.onActiveTabChanged();
         break;
-      }
       case 'move':
         this.persistence.markMetaDirty();
         break;

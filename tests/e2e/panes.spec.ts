@@ -371,3 +371,89 @@ test('バックアップに画面分割を含め、復元時に再現する', as
   expect(await paneText(page, 0)).toBe('A');
   expect(await editorText(page)).toBe('B');
 });
+
+/** ペイン見出しの ▾ から「このペインを空にする」 */
+async function emptyPane(page: Page, i: number) {
+  await pane(page, i).locator('.pane-pick').click();
+  await page.getByRole('menuitem', { name: 'このペインを空にする' }).click();
+}
+
+test('空のアクティブペインを含む分割状態を、再読み込み後にそのまま復元する', async ({ page }) => {
+  await createTabs(page, [
+    ['a.txt', 'A'],
+    ['b.txt', 'B'],
+    ['c.txt', 'C'],
+  ]);
+  await page.locator('.tab', { hasText: 'a.txt' }).click();
+  await setSplit(page, 3);
+  await emptyPane(page, 1);
+  const before = await layoutState(page);
+  expect(before).toEqual({ count: 3, active: 1, tabs: ['a.txt', null, 'c.txt'] });
+  await page.keyboard.press('Control+s');
+  await expect(page.locator('.status-save')).toHaveText('ブラウザ保存済');
+
+  await page.reload();
+  await expect(page.locator('html[data-ready="true"]')).toBeAttached();
+  expect(await layoutState(page)).toEqual(before);
+  await expect(pane(page, 1)).toHaveClass(/active/);
+  await expect(pane(page, 1).locator('.pane-empty')).toBeVisible();
+  await expect(page.locator('.status-counts')).toHaveText('タブなし');
+  // 空のペインにしていたタブ（b.txt）も残っている
+  await expect(page.locator('.tab')).toHaveCount(3);
+  await expect(page.locator('.tab.active')).toHaveCount(0);
+});
+
+test('空のアクティブペインを含む分割状態をバックアップから復元する', async ({ page }) => {
+  await createTabs(page, [
+    ['a.txt', 'A'],
+    ['b.txt', 'B'],
+    ['c.txt', 'C'],
+  ]);
+  await page.locator('.tab', { hasText: 'a.txt' }).click();
+  await setSplit(page, 3);
+  await emptyPane(page, 1);
+  const before = await layoutState(page);
+  expect(before).toEqual({ count: 3, active: 1, tabs: ['a.txt', null, 'c.txt'] });
+
+  await page.getByRole('menuitem', { name: 'ファイル' }).click();
+  const download = page.waitForEvent('download');
+  await page.getByRole('menuitem', { name: /バックアップを書き出し/ }).click();
+  const json = await readFile(await (await download).path(), 'utf-8');
+  expect(JSON.parse(json).layout).toEqual({ count: 3, panes: [0, null, 2], active: 1 });
+
+  // 別の配置に変えてから復元する
+  await setSplit(page, 1);
+  await page.locator('.tab', { hasText: 'b.txt' }).click();
+  await page.getByRole('menuitem', { name: 'ファイル' }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('menuitem', { name: 'バックアップから復元…' }).click();
+  await (await chooser).setFiles([{ name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(json) }]);
+  await page.getByRole('dialog').getByRole('button', { name: '置き換える' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '上書きする' }).click();
+  expect(await layoutState(page)).toEqual(before);
+  await expect(pane(page, 1).locator('.pane-empty')).toBeVisible();
+});
+
+test('画面分割の情報がない（v0.1.0 の）バックアップは、現在の分割数で順に割り当てる', async ({ page }) => {
+  await createTabs(page, [['x.txt', 'X']]);
+  await setSplit(page, 2);
+  const v010 = {
+    format: 'web-text-editor-backup',
+    version: 1,
+    appVersion: '0.1.0',
+    exportedAt: '2026-10-01T00:00:00.000Z',
+    activeIndex: 1,
+    settings: {},
+    tabs: ['一', '二', '三'].map((name) => ({ name: `${name}.txt`, content: name, mode: 'plaintext', eol: 'LF' })),
+  };
+  await page.getByRole('menuitem', { name: 'ファイル' }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('menuitem', { name: 'バックアップから復元…' }).click();
+  await (await chooser).setFiles([
+    { name: 'old.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(v010)) },
+  ]);
+  await page.getByRole('dialog').getByRole('button', { name: '置き換える' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '上書きする' }).click();
+  expect(await layoutState(page)).toEqual({ count: 2, active: 0, tabs: ['二.txt', '三.txt'] });
+  expect(await editorText(page)).toBe('二');
+});

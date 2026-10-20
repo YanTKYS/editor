@@ -283,7 +283,7 @@ export class FileCommands {
       const { count, panes, active } = data.layout;
       app.layout.load({ count, tabs: panes.map((i) => (i === null ? null : (ids[i] ?? null))), active }, ids, true);
     } else {
-      app.layout.load({ count: 1, tabs: [], active: 0 }, ids, true);
+      app.layout.load({ count: 1, tabs: [ids[data.activeIndex] ?? ids[0]], active: 0 }, ids, true);
     }
     app.store.reset(metas, metas[data.activeIndex]?.id ?? metas[0].id);
     // 画面分割の情報がない（v0.1.0 の）バックアップでは、現在の分割数でタブを順に割り当てる
