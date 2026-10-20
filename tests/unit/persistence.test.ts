@@ -47,6 +47,7 @@ const provider = {
     app: 'x',
     activeTabId: 'a',
     settings: DEFAULT_SETTINGS,
+    layout: { count: 1, tabs: ['a'], active: 0 },
     tabs: Object.keys(contents).map((id) => ({
       id,
       name: id,

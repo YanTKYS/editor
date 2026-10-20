@@ -44,3 +44,33 @@ describe('バックアップ', () => {
     expect(parsed.settings.theme).toBe(DEFAULT_SETTINGS.theme);
   });
 });
+
+describe('バックアップの画面分割', () => {
+  it('画面分割の状態を書き出し・復元できる', () => {
+    const backup = createBackup([tab, tab, tab], 0, DEFAULT_SETTINGS, '0.2.0', { count: 3, panes: [2, null, 0], active: 1 });
+    const parsed = parseBackup(JSON.stringify(backup));
+    expect(parsed.layout).toEqual({ count: 3, panes: [2, null, 0], active: 1 });
+    // 形式のバージョンは v0.1.0 と同じ（v0.1.0 でも読み込める）
+    expect(parsed.version).toBe(1);
+  });
+
+  it('v0.1.0 のバックアップ（画面分割なし）も読み込める', () => {
+    const v010 = { format: BACKUP_FORMAT, version: 1, appVersion: '0.1.0', exportedAt: '', activeIndex: 0, settings: DEFAULT_SETTINGS, tabs: [tab] };
+    expect(parseBackup(JSON.stringify(v010)).layout).toBeUndefined();
+  });
+
+  it('不正な画面分割の情報は補正または無視する', () => {
+    const base = { format: BACKUP_FORMAT, version: 1, tabs: [tab, tab] };
+    expect(parseBackup(JSON.stringify({ ...base, layout: { count: 9, panes: [] } })).layout).toBeUndefined();
+    expect(parseBackup(JSON.stringify({ ...base, layout: { count: 2, panes: [1, 1], active: 5 } })).layout).toEqual({
+      count: 2,
+      panes: [1, null],
+      active: 0,
+    });
+    expect(parseBackup(JSON.stringify({ ...base, layout: { count: 2, panes: [7, -1] } })).layout).toEqual({
+      count: 2,
+      panes: [null, null],
+      active: 0,
+    });
+  });
+});

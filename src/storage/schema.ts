@@ -1,10 +1,11 @@
 import { isLineEnding } from '../core/lineEndings';
 import { isEditorMode } from '../core/modes';
 import { normalizeSettings } from '../core/settings';
+import { PaneLayout, type PaneLayoutState } from '../core/paneLayout';
 import type { PersistedTabMeta, SelectionJSON, Settings } from '../core/types';
 
 /** ブラウザ内保存データのスキーマバージョン。形式を変える場合は増やし、migrate に変換処理を追加する */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const APP_ID = 'web-text-editor';
 
 /** タブ構成・設定など本文以外の保存データ */
@@ -19,6 +20,8 @@ export interface PersistedMeta {
   activeTabId: string | null;
   tabs: PersistedTabMeta[];
   settings: Settings;
+  /** 画面分割の状態（v2 で追加） */
+  layout: PaneLayoutState;
 }
 
 export type SchemaErrorKind = 'corrupt' | 'newer';
@@ -68,8 +71,19 @@ function parseTab(raw: unknown): PersistedTabMeta | null {
 }
 
 /**
+ * v1 → v2: 画面分割の状態（layout）を追加する。
+ * v1 は 1 画面のみのため、アクティブタブを 1 画面に表示した状態とする。
+ */
+function migrateV1toV2(raw: Record<string, unknown>): Record<string, unknown> {
+  const firstTab = Array.isArray(raw.tabs) && isObject(raw.tabs[0]) ? raw.tabs[0].id : null;
+  const activeTabId =
+    typeof raw.activeTabId === 'string' ? raw.activeTabId : typeof firstTab === 'string' ? firstTab : null;
+  return { ...raw, schemaVersion: 2, layout: { count: 1, tabs: [activeTabId], active: 0 } };
+}
+
+/**
  * 旧バージョンの保存データを現行スキーマへ変換する。
- * v1 が最初のバージョンのため、現時点では変換処理はない。
+ * 形式を変える場合は SCHEMA_VERSION を増やし、ここに変換処理を追加する。
  */
 function migrate(raw: Record<string, unknown>): Record<string, unknown> {
   const version = raw.schemaVersion;
@@ -82,8 +96,9 @@ function migrate(raw: Record<string, unknown>): Record<string, unknown> {
       `保存データは新しいバージョンのエディタで作成されています（スキーマ v${version}）。`,
     );
   }
-  // 例: if (version === 1) raw = migrateV1toV2(raw);
-  return raw;
+  let data = raw;
+  if (version === 1) data = migrateV1toV2(data);
+  return data;
 }
 
 /** 保存されたメタ情報（JSON 文字列）を検証して読み込む */
@@ -117,6 +132,7 @@ export function parseMeta(json: string): PersistedMeta {
     activeTabId: typeof data.activeTabId === 'string' ? data.activeTabId : null,
     tabs,
     settings: normalizeSettings(data.settings),
+    layout: parseLayout(data.layout, tabs),
   };
 }
 
@@ -133,4 +149,11 @@ export function peekRevision(json: string | null): { revision: number; writerId:
   } catch {
     return null;
   }
+}
+
+/** 画面分割の状態を検証する（存在しないタブ・重複・範囲外の値は補正する） */
+function parseLayout(raw: unknown, tabs: PersistedTabMeta[]): PaneLayoutState {
+  const layout = new PaneLayout();
+  layout.load(isObject(raw) ? (raw as Partial<PaneLayoutState>) : null, tabs.map((t) => t.id), true);
+  return layout.toJSON();
 }

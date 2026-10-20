@@ -26,6 +26,7 @@ function batch(tabs: Record<string, string>, removed: string[] = [], active: str
       app: APP_ID,
       activeTabId: active ?? Object.keys(tabs)[0] ?? null,
       settings: DEFAULT_SETTINGS,
+      layout: { count: 1, tabs: [active ?? Object.keys(tabs)[0] ?? null], active: 0 },
       tabs: Object.keys(tabs).map((id) => tabMeta(id)),
     },
     contents: new Map(Object.entries(tabs)),
@@ -145,6 +146,53 @@ describe('LocalStorageBackend', () => {
     storage.failOn = null;
     expect(storage.snapshot()).toEqual(before);
     expect(storage.getItem('test:tab:n')).toBeNull();
+  });
+
+  it('画面分割の状態を保存・復元する', async () => {
+    const b = batch({ a: '1', b: '2', c: '3' });
+    b.meta.layout = { count: 3, tabs: ['b', null, 'a'], active: 2 };
+    await backend.write(b, { writerId: 'w', expectedRevision: 0 });
+    const loaded = await backend.load();
+    expect(loaded.status === 'ok' && loaded.meta.layout).toEqual({ count: 3, tabs: ['b', null, 'a'], active: 2 });
+  });
+
+  it('v0.1.0（スキーマ v1）の保存データを v2 に移行して読み込む', async () => {
+    const v1 = {
+      schemaVersion: 1,
+      app: APP_ID,
+      revision: 7,
+      writerId: 'old',
+      savedAt: 1,
+      activeTabId: 'b',
+      tabs: [tabMeta('a'), tabMeta('b')],
+      settings: DEFAULT_SETTINGS,
+    };
+    storage.setItem('test:meta', JSON.stringify(v1));
+    storage.setItem('test:tab:a', '本文A');
+    storage.setItem('test:tab:b', '本文B');
+    const loaded = await backend.load();
+    expect(loaded.status).toBe('ok');
+    if (loaded.status !== 'ok') return;
+    expect(loaded.meta.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(loaded.meta.layout).toEqual({ count: 1, tabs: ['b'], active: 0 });
+    expect(loaded.meta.revision).toBe(7);
+    expect([...loaded.contents]).toEqual([
+      ['a', '本文A'],
+      ['b', '本文B'],
+    ]);
+    // 次の保存から v2 形式になる（revision は引き継ぐ）
+    await backend.write(batch({ a: '本文A', b: '本文B' }), { writerId: 'new', expectedRevision: 7 });
+    expect(JSON.parse(storage.getItem('test:meta')!).schemaVersion).toBe(2);
+  });
+
+  it('不正な画面分割の状態は補正する', async () => {
+    const b = batch({ a: '1' });
+    await backend.write(b, { writerId: 'w', expectedRevision: 0 });
+    const meta = JSON.parse(storage.getItem('test:meta')!);
+    meta.layout = { count: 7, tabs: ['zzz'], active: 4 };
+    storage.setItem('test:meta', JSON.stringify(meta));
+    const loaded = await backend.load();
+    expect(loaded.status === 'ok' && loaded.meta.layout).toEqual({ count: 1, tabs: [null], active: 0 });
   });
 
   it('壊れたデータ・新しいスキーマを検出する', async () => {

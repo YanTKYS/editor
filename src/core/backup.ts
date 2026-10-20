@@ -1,5 +1,6 @@
 import { isLineEnding, normalizeLineEndings } from './lineEndings';
 import { isEditorMode } from './modes';
+import { isPaneCount } from './paneLayout';
 import { normalizeSettings } from './settings';
 import type { EditorMode, LineEnding, Settings, SourceEncoding } from './types';
 
@@ -18,6 +19,17 @@ export interface BackupTab {
   bom: boolean;
 }
 
+/**
+ * 画面分割の状態（v0.2.0 で追加した任意項目）。
+ * タブ ID は復元時に振り直すため、タブの位置（tabs 配列の添字）で表す。
+ * 形式 v1 のまま追加しているため、v0.1.0 でもこの項目を無視して読み込める。
+ */
+export interface BackupLayout {
+  count: number;
+  panes: (number | null)[];
+  active: number;
+}
+
 export interface BackupData {
   format: typeof BACKUP_FORMAT;
   version: number;
@@ -26,6 +38,7 @@ export interface BackupData {
   activeIndex: number;
   settings: Settings;
   tabs: BackupTab[];
+  layout?: BackupLayout;
 }
 
 export function createBackup(
@@ -33,6 +46,7 @@ export function createBackup(
   activeIndex: number,
   settings: Settings,
   appVersion: string,
+  layout?: BackupLayout,
 ): BackupData {
   return {
     format: BACKUP_FORMAT,
@@ -42,6 +56,7 @@ export function createBackup(
     activeIndex,
     settings,
     tabs,
+    ...(layout ? { layout } : {}),
   };
 }
 
@@ -117,5 +132,28 @@ export function parseBackup(json: string): BackupData {
     activeIndex,
     settings: normalizeSettings(raw.settings),
     tabs,
+    layout: parseLayout(raw.layout, tabs.length),
   };
+}
+
+/** 画面分割の状態を検証する（不正な場合は無視して 1 画面として扱う） */
+function parseLayout(raw: unknown, tabCount: number): BackupLayout | undefined {
+  if (!isObject(raw) || !isPaneCount(raw.count) || !Array.isArray(raw.panes)) return undefined;
+  const count = raw.count;
+  const seen = new Set<number>();
+  const panes: (number | null)[] = [];
+  for (let i = 0; i < count; i++) {
+    const v: unknown = raw.panes[i];
+    if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < tabCount && !seen.has(v)) {
+      seen.add(v);
+      panes.push(v);
+    } else {
+      panes.push(null);
+    }
+  }
+  const active =
+    typeof raw.active === 'number' && Number.isInteger(raw.active) && raw.active >= 0 && raw.active < count
+      ? raw.active
+      : 0;
+  return { count, panes, active };
 }

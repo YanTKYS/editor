@@ -98,7 +98,15 @@ export class SearchController implements FindPanelHost {
     this.runFind(findPrevious);
   }
 
+  /** 検索・置換の対象（アクティブなペインのタブ）があるか。なければ利用者に知らせる */
+  private hasTarget(): boolean {
+    if (this.app.store.activeTabId) return true;
+    this.app.notifications.toast('アクティブなペインにタブが表示されていません。');
+    return false;
+  }
+
   private runFind(cmd: typeof findNext): void {
+    if (!this.hasTarget()) return;
     if (!this.query.valid) {
       if (!this.panelOpen) this.open('find');
       else this.app.findPanel.focusSearch();
@@ -110,19 +118,19 @@ export class SearchController implements FindPanelHost {
   }
 
   selectAll(): void {
-    if (!this.query.valid) return;
+    if (!this.query.valid || !this.hasTarget()) return;
     if (selectMatches(this.view)) this.app.editor.focus();
     else this.app.notifications.toast('見つかりませんでした。');
   }
 
   replaceNext(): void {
-    if (!this.query.valid) return;
+    if (!this.query.valid || !this.hasTarget()) return;
     if (!replaceNext(this.view)) this.app.notifications.toast('見つかりませんでした。');
     this.updateCount(true);
   }
 
   replaceAll(): void {
-    if (!this.query.valid) return;
+    if (!this.query.valid || !this.hasTarget()) return;
     const { changes, count } = buildReplaceAll(this.query, this.view.state);
     if (!count) {
       this.app.notifications.toast('一致する箇所はありません。');
