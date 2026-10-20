@@ -1,0 +1,142 @@
+name: Release
+
+# 手動実行のみ。指定したバージョンの配布用 ZIP をビルドし、GitHub Release に添付する。
+# - タグがなければ main の最新コミットをビルドし、そのコミットにタグを作成する
+# - タグがあれば、そのタグのコミットをビルドする（既存のタグは移動・再作成しない）
+# - 同じバージョンの Release があれば、ZIP・タイトル・本文を差し替える
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'リリースするバージョン（例: v0.2.0）。package.json と CHANGELOG.md に同じバージョンが必要'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# 同じバージョンのリリースを同時に実行しない
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ビルド・検証
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ inputs.version }}
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: 実行ブランチの確認
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::リリースは main ブランチから実行してください（現在: ${GITHUB_REF}）"
+          exit 1
+
+      # リリース用スクリプトは実行元（main）のものを使う。タグの確認のため全履歴・タグを取得する
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: バージョンとビルド対象コミットの決定
+        id: resolve
+        run: |
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::バージョンは v0.2.0 の形式で指定してください（入力: ${VERSION}）"
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
+            sha="$(git rev-parse "refs/tags/${VERSION}^{commit}")"
+            echo "既存のタグ ${VERSION}（${sha}）をビルドします"
+          else
+            sha="$GITHUB_SHA"
+            echo "タグ ${VERSION} がないため、main の ${sha} をビルドします"
+          fi
+          echo "sha=${sha}" >>"$GITHUB_OUTPUT"
+
+      - name: ビルド対象コミットの取得
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.resolve.outputs.sha }}
+          path: target
+          persist-credentials: false
+
+      - name: package.json のバージョンの確認
+        run: |
+          pkg="$(node -p "require('./target/package.json').version")"
+          if [[ "v${pkg}" != "$VERSION" ]]; then
+            echo "::error::package.json のバージョン（${pkg}）が指定されたバージョン（${VERSION}）と一致しません"
+            exit 1
+          fi
+
+      - name: リリースノートの取得（CHANGELOG.md）
+        run: ./scripts/release/changelog-section.sh "$VERSION" target/CHANGELOG.md >release-notes.md
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: target/package-lock.json
+
+      - run: npm ci
+        working-directory: target
+
+      - name: 型チェック・単体テスト・本番ビルド
+        run: npm run check
+        working-directory: target
+
+      - name: 配布用 ZIP の作成
+        run: ./scripts/release/package.sh "$VERSION" target/dist "editor-${VERSION}.zip"
+
+      - name: 静的 Web サーバーでの動作確認（サブパスに配置）
+        run: ./scripts/release/smoke-test.sh "editor-${VERSION}.zip"
+
+      - name: ビルド結果の記録
+        run: |
+          {
+            echo "### Web Text Editor ${VERSION}"
+            echo
+            echo "- コミット: \`${{ steps.resolve.outputs.sha }}\`"
+            echo "- ZIP: \`editor-${VERSION}.zip\`（$(du -h "editor-${VERSION}.zip" | cut -f1)）"
+            echo "- SHA-256: \`$(sha256sum "editor-${VERSION}.zip" | cut -d' ' -f1)\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: |
+            editor-${{ inputs.version }}.zip
+            release-notes.md
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: GitHub Release の作成・更新
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ inputs.version }}
+      SHA: ${{ needs.build.outputs.sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: scripts/release
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-files
+          path: release
+
+      - name: タグ・Release の作成・更新と ZIP の添付
+        run: >-
+          ./scripts/release/publish.sh "$VERSION" "release/editor-${VERSION}.zip"
+          release/release-notes.md "Web Text Editor ${VERSION}" "$SHA"

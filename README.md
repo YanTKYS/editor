@@ -111,9 +111,22 @@ tests/
 
 PR では `.github/workflows/ci.yml` により型チェック・単体テスト・ビルド・E2E テストが実行されます。
 
+### リリースビルド（配布用 ZIP）
+
+ローカルでビルドしなくても、GitHub Actions で配布用 ZIP を作成し、GitHub Releases から取得できます。
+
+1. `package.json` の `version` と `CHANGELOG.md` の「`## v0.2.0`」の節を用意して `main` にマージする
+2. GitHub の **Actions → Release → Run workflow** を開き、ブランチは `main` のまま、`version` に `v0.2.0` の形式で入力して実行する
+3. 完了後、**Releases** の「Web Text Editor v0.2.0」から `editor-v0.2.0.zip` をダウンロードする
+
+- 型チェック・単体テスト・本番ビルドと、ZIP を静的 Web サーバーのサブパスに展開した動作確認がすべて成功した場合だけ、Release を作成します。リリースノートは `CHANGELOG.md` の該当バージョンの節から作成します。
+- タグ（`v0.2.0`）がなければ、実行時点の `main` の最新コミットに作成します。タグがあれば、そのタグのコミットをビルドします（既存のタグは移動しません）。
+- 同じバージョンで再実行すると、同じタグのコミットからビルドし直し、Release の ZIP・タイトル・本文を差し替えます。新しい ZIP を一時名でアップロードし、旧 ZIP を退避名に変えてから新しい ZIP を正式名にし、最後に旧 ZIP を削除します。途中で失敗した場合は旧 ZIP を正式名に戻します（戻せない場合も削除せず、`editor-vX.Y.Z.previous-….zip` として残し、エラーで通知します。再実行すると差し替えを完了します）。
+- リリース用のスクリプトは `scripts/release/`、そのテストは `npm run test:release` です。
+
 ### IIS 等の静的 Web サーバー
 
-`dist/` の中身を任意のディレクトリ（例: `C:\inetpub\wwwroot\editor\`）にコピーするだけで動作します。サーバー側の設定やリライトは不要です。
+`dist/` の中身、または Releases の `editor-vX.Y.Z.zip` を展開した中身（直下に `index.html` と `assets/`）を、任意のディレクトリ（例: `C:\inetpub\wwwroot\editor\`）にコピーするだけで動作します。サーバー側の設定やリライトは不要です。
 
 ## 注意事項
 

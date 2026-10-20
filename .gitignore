@@ -5,3 +5,5 @@ playwright-report/
 coverage/
 *.log
 .DS_Store
+editor-*.zip
+release-notes.md

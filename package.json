@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "check": "npm run typecheck && npm test && vite build"
+    "check": "npm run typecheck && npm test && vite build",
+    "test:release": "bash tests/release/run.sh"
   },
   "engines": {
     "node": ">=20.19"

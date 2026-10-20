@@ -36,6 +36,14 @@ jobs:
       - name: ビルド
         run: npx vite build
 
+      - name: リリース用スクリプトのテスト
+        run: npm run test:release
+
+      - name: 配布用 ZIP の作成と静的サーバーでの動作確認
+        run: |
+          ./scripts/release/package.sh "v$(node -p "require('./package.json').version")" dist editor-ci.zip
+          ./scripts/release/smoke-test.sh editor-ci.zip
+
       - name: Playwright（Chromium）のインストール
         run: npx playwright install --with-deps chromium
 
