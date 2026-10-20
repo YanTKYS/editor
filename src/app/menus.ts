@@ -40,7 +40,13 @@ const COMMAND_LABELS: Record<CommandId, string> = {
   renameTab: 'タブ名の変更',
   toggleWrap: '右端で折り返す',
   togglePreview: 'Markdown プレビュー',
+  focusPane1: 'ペイン 1 へ移動',
+  focusPane2: 'ペイン 2 へ移動',
+  focusPane3: 'ペイン 3 へ移動',
+  focusPane4: 'ペイン 4 へ移動',
 };
+
+const SPLIT_LABELS = ['1 画面', '2 分割', '3 分割', '4 分割'];
 
 export function buildMenus(app: App): MenuDefinition[] {
   const cmd = (command: CommandId, label = COMMAND_LABELS[command], extra: Partial<MenuItem> = {}): MenuItem =>
@@ -146,6 +152,18 @@ export function buildMenus(app: App): MenuDefinition[] {
         },
         cmd('togglePreview', 'Markdown プレビュー', { checked: s().markdownPreview }),
         { separator: true },
+        { heading: '画面分割（左右に等幅で並べる）' },
+        ...SPLIT_LABELS.map((label, i) => ({
+          label,
+          checked: app.layout.count === i + 1,
+          action: () => app.setPaneCount(i + 1),
+        })),
+        ...(app.layout.count > 1
+          ? (['focusPane1', 'focusPane2', 'focusPane3', 'focusPane4'] as const)
+              .slice(0, app.layout.count)
+              .map((c) => cmd(c, undefined, { checked: app.layout.active === Number(c.slice(-1)) - 1 }))
+          : []),
+        { separator: true },
         { label: '文字を大きく', shortcut: `${s().fontSize}px`, action: () => app.changeFontSize(1) },
         { label: '文字を小さく', action: () => app.changeFontSize(-1) },
         { label: '文字サイズを標準に戻す', action: () => app.changeFontSize('reset') },
@@ -235,6 +253,26 @@ export function buildToolbar(app: App): HTMLElement {
     sep(),
     button('検索', '検索 (Ctrl+F)', () => app.run('find')),
     button('置換', '置換 (Ctrl+H)', () => app.run('replace')),
+    sep(),
+    sep(),
+    h(
+      'span',
+      { class: 'split-toggle', attrs: { role: 'group', 'aria-label': '画面分割' } },
+      [
+        h('span', { class: 'split-label', text: '分割', attrs: { 'aria-hidden': 'true' } }),
+        ...SPLIT_LABELS.map((label, i) =>
+          h('button', {
+            class: 'split-button',
+            text: String(i + 1),
+            type: 'button',
+            title: label,
+            dataset: { split: String(i + 1) },
+            attrs: { 'aria-label': label, 'aria-pressed': String(i === 0) },
+            on: { click: () => app.setPaneCount(i + 1) },
+          }),
+        ),
+      ],
+    ),
     sep(),
     button('折り返し', '右端で折り返す (Alt+Z)', () => app.run('toggleWrap'), 'tb-optional'),
     button('プレビュー', 'Markdown プレビュー (Alt+P)', () => app.run('togglePreview'), 'tb-optional'),

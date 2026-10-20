@@ -85,6 +85,16 @@ export class StatusBar {
         : '読み込み時の文字コード（書き出しは UTF-8 で行います）';
   }
 
+  /** アクティブなペインにタブがないときの表示 */
+  clear(): void {
+    this.position.textContent = '—';
+    this.counts.textContent = 'タブなし';
+    this.selection.hidden = true;
+    this.mode.textContent = '—';
+    this.eol.textContent = '—';
+    this.encoding.textContent = '';
+  }
+
   setSaveState(text: string, kind: 'ok' | 'pending' | 'error' | 'warning', detail: string): void {
     this.save.textContent = text;
     this.save.dataset.kind = kind;

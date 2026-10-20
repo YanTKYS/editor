@@ -101,27 +101,32 @@ interface Entry {
 }
 
 export interface EditorCallbacks {
-  /** 本文が変更された（アクティブ・非アクティブを問わない） */
+  /** 本文が変更された（表示中・非表示を問わない） */
   onDocChange(tabId: string): void;
-  /** アクティブタブのカーソル・選択範囲・本文が変化した */
+  /** 表示中のタブのカーソル・選択範囲・本文が変化した */
   onCursorActivity(tabId: string): void;
-  /** アクティブタブのスクロール位置が変化した */
+  /** 表示中のタブのスクロール位置が変化した */
   onScroll?(tabId: string): void;
 }
 
+interface Pane {
+  view: EditorView;
+  tabId: string | null;
+}
+
 /**
- * CodeMirror の EditorView を 1 つだけ持ち、タブごとの EditorState を切り替えて表示する。
- * EditorState に Undo/Redo 履歴・選択範囲が含まれるため、タブを切り替えても履歴は維持される。
+ * ペインごとに CodeMirror の EditorView を持ち、タブごとの EditorState を切り替えて表示する。
+ * EditorState に Undo/Redo 履歴・選択範囲が含まれるため、タブの表示先（ペイン）や
+ * 表示・非表示が変わっても履歴は維持される。各タブは高々 1 つのペインに表示する。
  */
 export class EditorManager {
-  readonly view: EditorView;
   private entries = new Map<string, Entry>();
-  private activeId: string | null = null;
+  private panes: Pane[] = [];
+  private activePane = 0;
   private settings: Settings;
   private configGeneration = 0;
   private searchQuery: SearchQuery | null = null;
   private searchActive = false;
-  private readonly emptyState: EditorState;
 
   private readonly language = new Compartment();
   private readonly eol = new Compartment();
@@ -133,27 +138,57 @@ export class EditorManager {
   private readonly eolMarkers = new Compartment();
 
   constructor(
-    parent: HTMLElement,
     settings: Settings,
     private readonly callbacks: EditorCallbacks,
   ) {
     this.settings = settings;
-    this.emptyState = EditorState.create({
-      doc: '',
-      extensions: [EditorState.readOnly.of(true), EditorView.editable.of(false), themeExtension(settings.theme)],
-    });
-    this.view = new EditorView({ state: this.emptyState, parent });
-    this.view.scrollDOM.addEventListener(
+  }
+
+  /** ペインの表示先要素を登録する（EditorView を作成する） */
+  attachPane(index: number, host: HTMLElement): void {
+    if (this.panes[index]) return;
+    const view = new EditorView({ state: this.emptyState(), parent: host });
+    const pane: Pane = { view, tabId: null };
+    view.scrollDOM.addEventListener(
       'scroll',
       () => {
-        if (this.activeId) this.callbacks.onScroll?.(this.activeId);
+        if (pane.tabId) this.callbacks.onScroll?.(pane.tabId);
       },
       { passive: true },
     );
+    this.panes[index] = pane;
   }
 
+  private emptyState(): EditorState {
+    return EditorState.create({
+      doc: '',
+      extensions: [EditorState.readOnly.of(true), EditorView.editable.of(false), themeExtension(this.settings.theme)],
+    });
+  }
+
+  /** アクティブなペインの EditorView（ペインが空なら読み取り専用の空の状態） */
+  get view(): EditorView {
+    return this.panes[this.activePane].view;
+  }
+
+  /** アクティブなペインに表示しているタブ */
   get activeTabId(): string | null {
-    return this.activeId;
+    return this.panes[this.activePane]?.tabId ?? null;
+  }
+
+  get activePaneIndex(): number {
+    return this.activePane;
+  }
+
+  /** タブを表示しているペインの番号（表示していなければ -1） */
+  paneOfTab(id: string): number {
+    return this.panes.findIndex((p) => p?.tabId === id);
+  }
+
+  /** タブを表示している EditorView */
+  private liveView(id: string): EditorView | null {
+    const i = this.paneOfTab(id);
+    return i >= 0 ? this.panes[i].view : null;
   }
 
   /* ---------- 拡張の構成 ---------- */
@@ -249,13 +284,12 @@ export class EditorManager {
     return entry.state;
   }
 
-  /** 現在の状態（アクティブタブは view の状態） */
+  /** 現在の状態（表示中のタブは EditorView の状態） */
   private currentState(entry: Entry): EditorState {
-    if (entry.id === this.activeId) return this.view.state;
-    return this.ensureState(entry);
+    return this.liveView(entry.id)?.state ?? this.ensureState(entry);
   }
 
-  /* ---------- タブの追加・削除・切り替え ---------- */
+  /* ---------- タブの追加・削除 ---------- */
 
   addTab(id: string, mode: EditorMode, eol: LineEnding, content: string, restore?: RestoreInfo): void {
     const entry: Entry = {
@@ -278,39 +312,53 @@ export class EditorManager {
   }
 
   removeTab(id: string): void {
-    if (this.activeId === id) {
-      this.activeId = null;
-      this.view.setState(this.emptyState);
+    const i = this.paneOfTab(id);
+    if (i >= 0) {
+      this.panes[i].tabId = null;
+      this.panes[i].view.setState(this.emptyState());
     }
     this.entries.delete(id);
   }
 
   /** 全タブを破棄する（バックアップからの復元時など） */
   clear(): void {
-    this.activeId = null;
-    this.view.setState(this.emptyState);
+    for (const pane of this.panes) {
+      if (!pane) continue;
+      pane.tabId = null;
+      pane.view.setState(this.emptyState());
+    }
     this.entries.clear();
   }
 
-  /** 表示するタブを切り替える */
-  activate(id: string | null): void {
-    if (id === this.activeId) return;
-    this.saveActiveViewState();
+  /* ---------- ペインへの表示 ---------- */
+
+  /**
+   * ペインに表示するタブを切り替える（null で空のペインにする）。
+   * 他のペインに表示中のタブは、そちらから外してから表示する。
+   */
+  showInPane(index: number, id: string | null): void {
+    const pane = this.panes[index];
+    if (!pane || pane.tabId === id) return;
+    this.detach(pane);
     const entry = id ? this.entries.get(id) : undefined;
     if (!entry) {
-      this.activeId = null;
-      this.view.setState(this.emptyState);
+      pane.view.setState(this.emptyState());
       return;
     }
+    const other = this.paneOfTab(entry.id);
+    if (other >= 0) {
+      this.detach(this.panes[other]);
+      this.panes[other].view.setState(this.emptyState());
+    }
     const state = this.ensureState(entry);
-    this.activeId = entry.id;
-    this.view.setState(state);
+    pane.tabId = entry.id;
+    pane.view.setState(state);
     const effects: StateEffect<unknown>[] = [];
     if (entry.configGeneration !== this.configGeneration) {
       effects.push(...this.reconfigureEffects(entry));
       entry.configGeneration = this.configGeneration;
     }
-    effects.push(...this.searchEffects(this.view.state));
+    effects.push(...this.searchEffects(pane.view.state, index === this.activePane));
     // スクロール位置の復元
     if (entry.scrollSnapshot && entry.scrollSnapshot.doc === state.doc) {
       effects.push(entry.scrollSnapshot.effect);
@@ -321,29 +369,29 @@ export class EditorManager {
       effects.push(EditorView.scrollIntoView(state.selection.main.head, { y: 'center' }));
     }
     entry.restore = null;
-    if (effects.length) this.view.dispatch({ effects });
+    if (effects.length) pane.view.dispatch({ effects });
   }
 
-  /** アクティブタブの表示状態（EditorState・スクロール位置）を退避する */
-  private saveActiveViewState(): void {
-    if (!this.activeId) return;
-    const entry = this.entries.get(this.activeId);
-    if (!entry) return;
-    entry.state = this.view.state;
-    entry.scrollSnapshot = { effect: this.view.scrollSnapshot(), doc: this.view.state.doc };
-    entry.scrollPos = this.topVisiblePos();
-  }
-
-  private topVisiblePos(): number {
-    const view = this.view;
-    if (view.state.doc.length === 0) return 0;
-    try {
-      const top = view.scrollDOM.scrollTop;
-      if (top <= 0) return 0;
-      return view.lineBlockAtHeight(top).from;
-    } catch {
-      return 0;
+  /** ペインに表示中のタブの状態（EditorState・スクロール位置）を退避し、ペインから外す */
+  private detach(pane: Pane): void {
+    if (!pane.tabId) return;
+    const entry = this.entries.get(pane.tabId);
+    if (entry) {
+      entry.state = pane.view.state;
+      entry.scrollSnapshot = { effect: pane.view.scrollSnapshot(), doc: pane.view.state.doc };
+      entry.scrollPos = topVisiblePos(pane.view);
     }
+    pane.tabId = null;
+  }
+
+  /** アクティブなペインを切り替える（検索の強調表示はアクティブなペインだけに出す） */
+  setActivePane(index: number): void {
+    if (!this.panes[index] || index === this.activePane) return;
+    const prev = this.panes[this.activePane];
+    this.activePane = index;
+    if (prev?.tabId) prev.view.dispatch({ effects: this.searchEffects(prev.view.state, false) });
+    const next = this.panes[index];
+    if (next.tabId) next.view.dispatch({ effects: this.searchEffects(next.view.state, true) });
   }
 
   /* ---------- 本文・状態の取得 ---------- */
@@ -351,7 +399,8 @@ export class EditorManager {
   getContent(id: string): string {
     const entry = this.entries.get(id);
     if (!entry) return '';
-    if (entry.id === this.activeId) return this.view.state.doc.toString();
+    const view = this.liveView(id);
+    if (view) return view.state.doc.toString();
     if (entry.state) return entry.state.doc.toString();
     return entry.content ?? '';
   }
@@ -369,15 +418,15 @@ export class EditorManager {
   getSearchSource(id: string): EditorState | string | null {
     const entry = this.entries.get(id);
     if (!entry) return null;
-    if (entry.id === this.activeId) return this.view.state;
-    return entry.state ?? entry.content ?? '';
+    return this.liveView(id)?.state ?? entry.state ?? entry.content ?? '';
   }
 
   /** 本文の長さ（EditorState を作らずに取得） */
   getLength(id: string): number {
     const entry = this.entries.get(id);
     if (!entry) return 0;
-    if (entry.id === this.activeId) return this.view.state.doc.length;
+    const view = this.liveView(id);
+    if (view) return view.state.doc.length;
     if (entry.state) return entry.state.doc.length;
     return entry.content?.length ?? 0;
   }
@@ -385,20 +434,20 @@ export class EditorManager {
   getSelection(id: string): SelectionJSON | undefined {
     const entry = this.entries.get(id);
     if (!entry) return undefined;
-    if (entry.id === this.activeId) return this.view.state.selection.toJSON() as SelectionJSON;
-    if (entry.state) return entry.state.selection.toJSON() as SelectionJSON;
+    const state = this.liveView(id)?.state ?? entry.state;
+    if (state) return state.selection.toJSON() as SelectionJSON;
     return entry.restore?.selection;
   }
 
   getScrollPos(id: string): number {
     const entry = this.entries.get(id);
     if (!entry) return 0;
-    if (entry.id === this.activeId) return this.topVisiblePos();
-    return entry.scrollPos;
+    const view = this.liveView(id);
+    return view ? topVisiblePos(view) : entry.scrollPos;
   }
 
   /**
-   * タブに変更を適用する（非アクティブタブにも適用可能）。
+   * タブに変更を適用する（表示していないタブにも適用可能）。
    * 変更は各タブの Undo 履歴に記録される。
    */
   applyToTab(id: string, build: (state: EditorState) => TransactionSpec | null): boolean {
@@ -406,8 +455,9 @@ export class EditorManager {
     if (!entry) return false;
     const spec = build(this.currentState(entry));
     if (!spec) return false;
-    if (entry.id === this.activeId) {
-      this.view.dispatch(spec);
+    const view = this.liveView(id);
+    if (view) {
+      view.dispatch(spec);
     } else {
       const tr = this.ensureState(entry).update(spec);
       entry.state = tr.state;
@@ -426,8 +476,9 @@ export class EditorManager {
   }
 
   private reconfigureEntry(entry: Entry, effects: StateEffect<unknown>[]): void {
-    if (entry.id === this.activeId) {
-      this.view.dispatch({ effects });
+    const view = this.liveView(entry.id);
+    if (view) {
+      view.dispatch({ effects });
     } else if (entry.state) {
       entry.state = entry.state.update({ effects }).state;
     }
@@ -451,55 +502,74 @@ export class EditorManager {
 
   /* ---------- 設定 ---------- */
 
+  /** 設定を反映する（表示中のタブは直ちに、非表示のタブは次に表示するときに反映） */
   applySettings(settings: Settings): void {
     this.settings = settings;
     this.configGeneration++;
-    const entry = this.activeId ? this.entries.get(this.activeId) : undefined;
-    if (entry) {
-      this.view.dispatch({ effects: this.reconfigureEffects(entry) });
-      entry.configGeneration = this.configGeneration;
-    } else {
-      this.view.setState(
-        EditorState.create({
-          doc: '',
-          extensions: [EditorState.readOnly.of(true), EditorView.editable.of(false), themeExtension(settings.theme)],
-        }),
-      );
+    for (const pane of this.panes) {
+      if (!pane) continue;
+      const entry = pane.tabId ? this.entries.get(pane.tabId) : undefined;
+      if (entry) {
+        pane.view.dispatch({ effects: this.reconfigureEffects(entry) });
+        entry.configGeneration = this.configGeneration;
+      } else {
+        pane.view.setState(this.emptyState());
+      }
     }
-    this.view.requestMeasure();
+    this.requestMeasure();
+  }
+
+  /** レイアウト変更後に各ペインの寸法を測り直す */
+  requestMeasure(): void {
+    for (const pane of this.panes) pane?.view.requestMeasure();
   }
 
   /* ---------- 検索 ---------- */
 
-  private searchEffects(state: EditorState): StateEffect<unknown>[] {
+  private searchEffects(state: EditorState, active: boolean): StateEffect<unknown>[] {
     const effects: StateEffect<unknown>[] = [];
     if (this.searchQuery) effects.push(setSearchQuery.of(this.searchQuery));
-    if (state.field(searchActiveField, false) !== this.searchActive) {
-      effects.push(setSearchActive.of(this.searchActive));
+    const highlight = active && this.searchActive;
+    if (state.field(searchActiveField, false) !== highlight) {
+      effects.push(setSearchActive.of(highlight));
     }
     return effects;
   }
 
-  /** 検索条件をアクティブタブに反映する（タブ切り替え時にも引き継ぐ） */
+  /** 検索条件をアクティブなペインに反映する（ペイン・タブの切り替え時にも引き継ぐ） */
   setSearch(query: SearchQuery | null, active: boolean): void {
     this.searchQuery = query;
     this.searchActive = active;
-    if (this.activeId) this.view.dispatch({ effects: this.searchEffects(this.view.state) });
+    const pane = this.panes[this.activePane];
+    if (pane?.tabId) pane.view.dispatch({ effects: this.searchEffects(pane.view.state, true) });
   }
 
   focus(): void {
-    this.view.focus();
+    this.panes[this.activePane]?.view.focus();
   }
 
-  /** 指定位置を選択してスクロールする */
+  /** 指定位置を選択してスクロールする（タブを表示しているペインで行う） */
   select(id: string, anchor: number, head = anchor): void {
-    if (id !== this.activeId) return;
-    const len = this.view.state.doc.length;
+    const view = this.liveView(id);
+    if (!view) return;
+    const len = view.state.doc.length;
     const range = EditorSelection.range(Math.min(anchor, len), Math.min(head, len));
-    this.view.dispatch({
+    view.dispatch({
       selection: EditorSelection.create([range]),
       effects: EditorView.scrollIntoView(range, { y: 'center' }),
       userEvent: 'select',
     });
+  }
+}
+
+/** 画面上端に表示されている文書内位置 */
+function topVisiblePos(view: EditorView): number {
+  if (view.state.doc.length === 0) return 0;
+  try {
+    const top = view.scrollDOM.scrollTop;
+    if (top <= 0) return 0;
+    return view.lineBlockAtHeight(top).from;
+  } catch {
+    return 0;
   }
 }

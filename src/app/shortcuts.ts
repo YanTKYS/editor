@@ -16,7 +16,11 @@ export type CommandId =
   | 'reopenTab'
   | 'renameTab'
   | 'toggleWrap'
-  | 'togglePreview';
+  | 'togglePreview'
+  | 'focusPane1'
+  | 'focusPane2'
+  | 'focusPane3'
+  | 'focusPane4';
 
 export interface Binding {
   command: CommandId;
@@ -56,6 +60,10 @@ export const BINDINGS: Binding[] = [
   { command: 'renameTab', keys: ['F2'] },
   { command: 'toggleWrap', keys: ['Alt+Z'] },
   { command: 'togglePreview', keys: ['Alt+P'] },
+  { command: 'focusPane1', keys: ['Alt+1'] },
+  { command: 'focusPane2', keys: ['Alt+2'] },
+  { command: 'focusPane3', keys: ['Alt+3'] },
+  { command: 'focusPane4', keys: ['Alt+4'] },
 ];
 
 /** キーイベントを "Ctrl+Shift+S" 形式の文字列にする（Mac の Cmd は Ctrl とみなす） */
@@ -64,6 +72,7 @@ export function eventToKey(e: KeyboardEvent): string {
   if (key === 'Control' || key === 'Shift' || key === 'Alt' || key === 'Meta') return '';
   // Alt 併用時に e.key が特殊文字になる配列（Mac 等）に備えて e.code から英字を得る
   if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3);
+  else if (/^Digit[0-9]$/.test(e.code)) key = e.code.slice(5);
   else if (key.length === 1) key = key.toUpperCase();
   const parts: string[] = [];
   if (e.ctrlKey || e.metaKey) parts.push('Ctrl');

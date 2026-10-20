@@ -1,5 +1,6 @@
 import { createId } from '../core/emitter';
 import { detectMode, modeInfo, MODES } from '../core/modes';
+import { MAX_PANES, PaneLayout } from '../core/paneLayout';
 import { initialSettings, normalizeSettings } from '../core/settings';
 import { TabStore, type TabChange } from '../core/tabStore';
 import {
@@ -14,11 +15,13 @@ import { EditorManager, type RestoreInfo } from '../editor/editorManager';
 import { StorageUnavailableError } from '../storage/backend';
 import { LocalStorageBackend } from '../storage/localStorageBackend';
 import { PersistenceController, type SaveStatus } from '../storage/persistence';
+import { SCHEMA_VERSION } from '../storage/schema';
 import { confirmDialog, isDialogOpen, promptDialog, showDialog } from '../ui/dialogs';
 import { h } from '../ui/dom';
 import { FindPanel } from '../ui/findPanel';
 import { MenuBar } from '../ui/menuBar';
 import { Notifications } from '../ui/notifications';
+import { PaneArea } from '../ui/paneArea';
 import { closePopup, PopupMenu, type MenuItem } from '../ui/popupMenu';
 import { MarkdownPreview } from '../ui/preview';
 import { StatusBar } from '../ui/statusBar';
@@ -47,6 +50,8 @@ const CLOSED_TAB_LIMIT = 20;
  */
 export class App {
   readonly store = new TabStore();
+  /** 画面分割（どのペインにどのタブを表示するか） */
+  readonly layout = new PaneLayout();
   readonly instanceId = createId();
   readonly notifications = new Notifications();
   readonly backend: LocalStorageBackend | null;
@@ -58,6 +63,7 @@ export class App {
   statusBar!: StatusBar;
   tabBar!: TabBar;
   menuBar!: MenuBar;
+  paneArea!: PaneArea;
   readonly search: SearchController;
   readonly files: FileCommands;
 
@@ -66,7 +72,6 @@ export class App {
   readonly mixedEol = new Set<string>();
   private cursorDirty = false;
   private statusQueued = false;
-  private editorHost!: HTMLElement;
   private splitter!: HTMLElement;
   private workspace!: HTMLElement;
   private dropOverlay!: HTMLElement;
@@ -117,6 +122,8 @@ export class App {
       create: () => this.newTab(),
       move: (id, index) => this.store.move(id, index),
       contextMenu: (id) => this.tabContextMenu(id),
+      paneOf: (id) => this.layout.paneOf(id),
+      paneCount: () => this.layout.count,
     });
     this.statusBar = new StatusBar({
       pickMode: (el) => this.showModeMenu(el),
@@ -127,7 +134,11 @@ export class App {
     });
     this.findPanel = new FindPanel(this.search);
     this.preview = new MarkdownPreview();
-    this.editorHost = h('div', { class: 'editor-host', attrs: { id: 'editor-area', role: 'tabpanel' } });
+    this.paneArea = new PaneArea({
+      activatePane: (i) => this.layout.setActive(i),
+      dropTab: (id, i) => this.showTabInPane(id, i, true),
+      pickTab: (i, anchor) => this.showPanePicker(i, anchor),
+    });
     this.splitter = h('div', {
       class: 'splitter',
       attrs: {
@@ -137,7 +148,7 @@ export class App {
         tabindex: '0',
       },
     });
-    const split = h('div', { class: 'split' }, [this.editorHost, this.splitter, this.preview.el]);
+    const split = h('div', { class: 'split' }, [this.paneArea.el, this.splitter, this.preview.el]);
     this.workspace = h('main', { class: 'workspace' }, [this.findPanel.el, split, this.findPanel.resultsEl]);
     this.dropOverlay = h('div', { class: 'drop-overlay', attrs: { 'aria-hidden': 'true' } }, [
       h('div', { class: 'drop-message', text: 'ドロップしてファイルを開く' }),
@@ -153,13 +164,15 @@ export class App {
       this.notifications.toastArea,
       this.dropOverlay,
     );
-    this.editor = new EditorManager(this.editorHost, this.settings, {
+    this.editor = new EditorManager(this.settings, {
       onDocChange: (id) => this.onDocChange(id),
       onCursorActivity: (id) => this.onCursorActivity(id),
-      onScroll: () => this.onEditorScroll(),
+      onScroll: (id) => this.onEditorScroll(id),
     });
+    this.editor.attachPane(0, this.paneArea.host(0));
     this.setupSplitter();
     this.store.events.on('change', (c) => this.onStoreChange(c));
+    this.layout.events.on('change', () => this.syncPanes());
     this.persistence.events.on('status', (s) => this.onSaveStatus(s));
   }
 
@@ -178,6 +191,7 @@ export class App {
         });
         metas.push(meta);
       }
+      this.layout.load(result.meta.layout, metas.map((m) => m.id), true);
       this.store.reset(metas, result.meta.activeTabId);
       if (this.store.count === 0) this.newTab({ focus: false });
       this.persistence.start(result.meta.revision, result.meta.savedAt);
@@ -217,6 +231,8 @@ export class App {
         this.editor.removeTab(c.id);
         this.mixedEol.delete(c.id);
         this.persistence.markTabRemoved(c.id);
+        // 表示していたペインには近くのタブ（なければ空）を表示する
+        this.layout.removeTab(c.id, this.store.all.map((t) => t.id), c.index);
         break;
       case 'update': {
         const tab = this.store.get(c.id);
@@ -225,6 +241,9 @@ export class App {
         if (c.keys.includes('eol')) {
           this.editor.setEol(c.id, tab.eol);
           this.mixedEol.delete(c.id);
+        }
+        if (c.keys.includes('name') || c.keys.includes('modifiedSinceFile')) {
+          this.paneArea.render(this.layout, this.store);
         }
         if (c.id === this.store.activeTabId) {
           this.updateTitle();
@@ -235,14 +254,21 @@ export class App {
         break;
       }
       case 'activate':
-      case 'reset':
-        this.editor.activate(this.store.activeTabId);
-        this.updateTitle();
-        this.updatePreview(true);
-        this.search.onActiveTabChanged();
-        this.scheduleStatusUpdate();
-        this.persistence.markMetaDirty();
+        this.onActiveTabChanged();
         break;
+      case 'reset': {
+        // 存在しないタブをペインから外し、アクティブなペインが空ならアクティブタブを表示する
+        this.layout.reconcile(this.store.all.map((t) => t.id));
+        const preferred = this.store.activeTabId;
+        if (!this.layout.activeTabId && preferred) {
+          const pane = this.layout.paneOf(preferred);
+          if (pane >= 0) this.layout.setActive(pane);
+          else this.layout.show(preferred);
+        }
+        this.syncPanes();
+        this.onActiveTabChanged();
+        break;
+      }
       case 'move':
         this.persistence.markMetaDirty();
         break;
@@ -266,8 +292,18 @@ export class App {
     this.search.onSelectionChanged();
   }
 
-  private onEditorScroll(): void {
+  /** アクティブなタブ（アクティブなペインの表示内容）が変わった */
+  private onActiveTabChanged(): void {
+    this.updateTitle();
+    this.updatePreview(true);
+    this.search.onActiveTabChanged();
+    this.scheduleStatusUpdate();
+    this.persistence.markMetaDirty();
+  }
+
+  private onEditorScroll(id: string): void {
     this.cursorDirty = true;
+    if (id !== this.store.activeTabId) return;
     if (!this.preview.visible) return;
     const s = this.editor.view.scrollDOM;
     const max = s.scrollHeight - s.clientHeight;
@@ -388,6 +424,12 @@ export class App {
       case 'togglePreview':
         this.togglePreview();
         break;
+      case 'focusPane1':
+      case 'focusPane2':
+      case 'focusPane3':
+      case 'focusPane4':
+        this.focusPane(Number(command.slice(-1)) - 1);
+        break;
     }
   }
 
@@ -411,9 +453,77 @@ export class App {
     return tab;
   }
 
+  /**
+   * タブをアクティブにする。他のペインに表示中ならそのペインをアクティブにし、
+   * そうでなければアクティブなペインに表示する。
+   */
   activateTab(id: string, focus = false): void {
-    this.store.activate(id);
+    if (!this.store.get(id)) return;
+    const pane = this.layout.paneOf(id);
+    if (pane >= 0) this.layout.setActive(pane);
+    else this.layout.show(id, this.layout.active);
     if (focus) this.editor.focus();
+  }
+
+  /* ====================================================================== */
+  /* 画面分割                                                                */
+  /* ====================================================================== */
+
+  /** ペインの配置をエディタ・画面に反映する（配置が変わるたびに呼ばれる） */
+  private syncPanes(): void {
+    const { layout } = this;
+    for (let i = 0; i < layout.count; i++) this.editor.attachPane(i, this.paneArea.host(i));
+    for (let i = 0; i < MAX_PANES; i++) this.editor.showInPane(i, i < layout.count ? layout.tabs[i] : null);
+    this.editor.setActivePane(layout.active);
+    this.paneArea.render(layout, this.store);
+    this.tabBar.render();
+    this.updateSplitButtons();
+    // TabStore のアクティブタブは「アクティブなペインに表示しているタブ」とする
+    this.store.activate(layout.activeTabId);
+    this.editor.requestMeasure();
+    this.persistence.markMetaDirty();
+  }
+
+  /** 分割数を変更する（閉じたペインのタブは削除せず、表示しなくなるだけ） */
+  setPaneCount(count: number): void {
+    this.layout.setCount(count, this.store.all.map((t) => t.id));
+    this.editor.focus();
+  }
+
+  /** タブを指定のペインに表示する（他のペインに表示中なら移動する） */
+  showTabInPane(id: string, pane: number, focus = false): void {
+    if (!this.store.get(id) || pane >= this.layout.count) return;
+    this.layout.show(id, pane, true);
+    if (focus) this.editor.focus();
+  }
+
+  focusPane(pane: number): void {
+    if (pane >= this.layout.count) return;
+    this.layout.setActive(pane);
+    this.editor.focus();
+  }
+
+  /** ペインに表示するタブを選ぶメニュー */
+  showPanePicker(pane: number, anchor: HTMLElement): void {
+    this.layout.setActive(pane);
+    const items: MenuItem[] = this.store.all.map((t) => {
+      const shownIn = this.layout.paneOf(t.id);
+      return {
+        label: `${t.modifiedSinceFile ? '● ' : ''}${t.name}${shownIn >= 0 && shownIn !== pane ? `（ペイン ${shownIn + 1} に表示中）` : ''}`,
+        checked: shownIn === pane,
+        action: () => this.showTabInPane(t.id, pane, true),
+      };
+    });
+    if (this.layout.tabs[pane]) {
+      items.push({ separator: true }, { label: 'このペインを空にする', action: () => this.layout.show(null, pane) });
+    }
+    new PopupMenu(items, { label: `ペイン ${pane + 1} に表示するタブ` }).showAt(anchor);
+  }
+
+  private updateSplitButtons(): void {
+    for (const btn of document.querySelectorAll<HTMLButtonElement>('[data-split]')) {
+      btn.setAttribute('aria-pressed', String(Number(btn.dataset.split) === this.layout.count));
+    }
   }
 
   cycleTab(offset: number): void {
@@ -630,7 +740,7 @@ export class App {
     root.style.setProperty('--editor-font-size', `${this.settings.fontSize}px`);
     root.style.colorScheme = this.settings.theme;
     this.workspace.style.setProperty('--preview-ratio', String(this.settings.previewRatio));
-    this.editor.view.requestMeasure();
+    this.editor.requestMeasure();
   }
 
   togglePreview(): void {
@@ -682,7 +792,7 @@ export class App {
         el.removeEventListener('pointermove', move);
         el.removeEventListener('pointerup', up);
         setRatio(ratioAt(ev), true);
-        this.editor.view.requestMeasure();
+        this.editor.requestMeasure();
       };
       el.addEventListener('pointermove', move);
       el.addEventListener('pointerup', up);
@@ -701,10 +811,11 @@ export class App {
 
   private buildMeta() {
     return {
-      schemaVersion: 1,
+      schemaVersion: SCHEMA_VERSION,
       app: '',
       activeTabId: this.store.activeTabId,
       settings: this.settings,
+      layout: this.layout.toJSON(),
       tabs: this.store.all.map((t) => ({
         ...t,
         selection: this.editor.getSelection(t.id),
@@ -875,7 +986,10 @@ export class App {
 
   private updateStatus(): void {
     const tab = this.store.active;
-    if (!tab) return;
+    if (!tab) {
+      this.statusBar.clear();
+      return;
+    }
     const state = this.editor.view.state;
     const main = state.selection.main;
     const line = state.doc.lineAt(main.head);

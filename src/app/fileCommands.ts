@@ -186,7 +186,12 @@ export class FileCommands {
       bom: t.bom,
     }));
     const activeIndex = Math.max(0, store.activeTabId ? store.indexOf(store.activeTabId) : 0);
-    const data = createBackup(tabs, activeIndex, settings, APP_VERSION);
+    const { layout } = this.app;
+    const data = createBackup(tabs, activeIndex, settings, APP_VERSION, {
+      count: layout.count,
+      panes: layout.tabs.map((id) => (id ? store.indexOf(id) : -1)).map((i) => (i >= 0 ? i : null)),
+      active: layout.active,
+    });
     const json = JSON.stringify(data, null, 2);
     downloadBlob(new Blob([json], { type: 'application/json' }), `editor-backup-${timestamp()}.json`);
     this.app.notifications.toast(`${tabs.length} 個のタブと設定をバックアップとして書き出しました。`, 'success');
@@ -271,7 +276,18 @@ export class FileCommands {
       });
     }
     app.updateSettings(data.settings);
+    const ids = metas.map((m) => m.id);
+    const prevCount = app.layout.count;
+    if (data.layout) {
+      // バックアップの画面分割を復元する（タブ位置 → 新しいタブ ID）
+      const { count, panes, active } = data.layout;
+      app.layout.load({ count, tabs: panes.map((i) => (i === null ? null : (ids[i] ?? null))), active }, ids, true);
+    } else {
+      app.layout.load({ count: 1, tabs: [], active: 0 }, ids, true);
+    }
     app.store.reset(metas, metas[data.activeIndex]?.id ?? metas[0].id);
+    // 画面分割の情報がない（v0.1.0 の）バックアップでは、現在の分割数でタブを順に割り当てる
+    if (!data.layout) app.layout.setCount(prevCount, ids);
     app.persistence.markAllDirty(metas.map((m) => m.id));
     app.editor.focus();
     app.notifications.toast(`バックアップから ${metas.length} 個のタブを復元しました。`, 'success');

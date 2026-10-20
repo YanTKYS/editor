@@ -4,7 +4,7 @@ import type { TabMeta } from './types';
 
 export type TabChange =
   | { type: 'add'; id: string }
-  | { type: 'remove'; id: string }
+  | { type: 'remove'; id: string; index: number }
   | { type: 'update'; id: string; keys: (keyof TabMeta)[] }
   | { type: 'move'; id: string }
   | { type: 'activate'; id: string | null; previous: string | null }
@@ -100,7 +100,7 @@ export class TabStore {
     const idx = this.indexOf(id);
     if (idx < 0) return this.activeId;
     this.tabs.splice(idx, 1);
-    this.events.emit('change', { type: 'remove', id });
+    this.events.emit('change', { type: 'remove', id, index: idx });
     if (this.activeId === id) {
       const next = this.tabs[idx] ?? this.tabs[idx - 1] ?? null;
       this.activate(next ? next.id : null);

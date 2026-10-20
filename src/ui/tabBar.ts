@@ -1,6 +1,7 @@
 import type { TabStore } from '../core/tabStore';
 import type { TabMeta } from '../core/types';
 import { h } from './dom';
+import { TAB_DRAG_TYPE } from './paneArea';
 import { PopupMenu, type MenuItem } from './popupMenu';
 
 export interface TabBarActions {
@@ -10,6 +11,10 @@ export interface TabBarActions {
   create(): void;
   move(id: string, toIndex: number): void;
   contextMenu(id: string): MenuItem[];
+  /** タブを表示しているペインの番号（表示していなければ -1） */
+  paneOf(id: string): number;
+  /** 分割数 */
+  paneCount(): number;
 }
 
 /**
@@ -121,6 +126,7 @@ export class TabBar {
 
   private createTab(id: string): HTMLElement {
     const label = h('span', { class: 'tab-label' });
+    const pane = h('span', { class: 'tab-pane', attrs: { 'aria-hidden': 'true' } });
     const dirty = h('span', { class: 'tab-dirty', attrs: { 'aria-hidden': 'true' } });
     const close = h('button', {
       class: 'tab-close',
@@ -135,7 +141,7 @@ export class TabBar {
         dataset: { id },
         attrs: { role: 'tab', draggable: 'true', tabindex: '-1' },
       },
-      [dirty, label, close],
+      [dirty, label, pane, close],
     );
     close.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -164,7 +170,7 @@ export class TabBar {
     el.addEventListener('dragstart', (e) => {
       this.dragId = id;
       el.classList.add('dragging');
-      e.dataTransfer?.setData('application/x-editor-tab', id);
+      e.dataTransfer?.setData(TAB_DRAG_TYPE, id);
       if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
     });
     el.addEventListener('dragend', () => {
@@ -179,6 +185,12 @@ export class TabBar {
     const label = el.querySelector('.tab-label') as HTMLElement;
     if (label.textContent !== tab.name) label.textContent = tab.name;
     el.title = `${tab.name}${tab.modifiedSinceFile ? '（ファイル未書き出しの変更あり）' : ''}\nダブルクリックで名前変更、中クリックで閉じる`;
+    const paneIndex = this.actions.paneCount() > 1 ? this.actions.paneOf(tab.id) : -1;
+    const paneEl = el.querySelector('.tab-pane') as HTMLElement;
+    paneEl.textContent = paneIndex >= 0 ? String(paneIndex + 1) : '';
+    paneEl.hidden = paneIndex < 0;
+    if (paneIndex >= 0) el.title += `\nペイン ${paneIndex + 1} に表示中`;
+    el.classList.toggle('displayed', paneIndex >= 0);
     el.classList.toggle('active', active);
     el.classList.toggle('modified', tab.modifiedSinceFile);
     el.setAttribute('aria-selected', String(active));
@@ -220,7 +232,7 @@ export class TabBar {
         break;
       case 'Enter':
         this.actions.activate(id);
-        (document.querySelector('.cm-content') as HTMLElement | null)?.focus();
+        (document.querySelector('.pane.active .cm-content') as HTMLElement | null)?.focus();
         break;
       case 'ContextMenu': {
         const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
