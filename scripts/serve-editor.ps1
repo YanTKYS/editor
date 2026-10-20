@@ -1,8 +1,10 @@
-# Local static HTTP server for the Web Text Editor release ZIP.
-# Windows PowerShell 5.1 and PowerShell 7 compatible.
-# Place next to index.html. No Node.js, Python, or IIS required.
+# Local static HTTP server for checking the Web Text Editor release ZIP.
+# Windows PowerShell 5.1 and PowerShell 7 compatible. No Node.js, Python, or IIS required.
+# Listens on 127.0.0.1 only. Usage:
+#   powershell -ExecutionPolicy Bypass -File serve-editor.ps1 -Folder <extracted ZIP folder> [-Port 8765]
 param(
-    [string]$Folder = $PSScriptRoot,
+    # Folder that contains index.html and assets/ (default: current directory).
+    [string]$Folder = (Get-Location).ProviderPath,
     [ValidateRange(1, 65535)]
     [int]$Port = 8765
 )
@@ -42,10 +44,16 @@ Write-Host 'Press Ctrl+C to stop.'
 
 try {
     while ($true) {
+        # Poll instead of blocking in AcceptTcpClient() so that Ctrl+C is handled promptly.
+        if (-not $server.Pending()) {
+            Start-Sleep -Milliseconds 50
+            continue
+        }
         $client = $server.AcceptTcpClient()
         try {
             $stream = $client.GetStream()
-            $stream.ReadTimeout = 10000
+            # Browsers open idle speculative connections; do not let them stall the server.
+            $stream.ReadTimeout = 2000
             $reader = [System.IO.StreamReader]::new(
                 $stream, [System.Text.Encoding]::ASCII, $false, 1024, $true
             )
@@ -95,6 +103,8 @@ try {
             $stream.Write($headerBytes, 0, $headerBytes.Length)
             if ($method -ne 'HEAD') { $stream.Write($data, 0, $data.Length) }
             $stream.Flush()
+        } catch [System.IO.IOException] {
+            # Idle or aborted connection (read timeout, client closed); nothing to report.
         } catch {
             Write-Warning "HTTP request error: $_"
         } finally {

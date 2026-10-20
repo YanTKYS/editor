@@ -124,6 +124,24 @@ PR では `.github/workflows/ci.yml` により型チェック・単体テスト�
 - 同じバージョンで再実行すると、同じタグのコミットからビルドし直し、Release の ZIP・タイトル・本文を差し替えます。新しい ZIP を一時名でアップロードし、旧 ZIP を退避名に変えてから新しい ZIP を正式名にし、最後に旧 ZIP を削除します。途中で失敗した場合は旧 ZIP を正式名に戻します（戻せない場合も削除せず、`editor-vX.Y.Z.previous-….zip` として残し、エラーで通知します。再実行すると差し替えを完了します）。
 - リリース用のスクリプトは `scripts/release/`、そのテストは `npm run test:release` です。
 
+### ローカルで配布版を確認する
+
+Releases の ZIP を展開して `index.html` をダブルクリック（`file://`）で開くと、ブラウザの CORS 制限により JavaScript・CSS を読み込めず、画面が表示されません。
+Windows では、リポジトリの `scripts/serve-editor.ps1` で簡易 HTTP サーバーを起動して確認できます（Windows PowerShell 5.1 で動作し、Node.js・Python・IIS は不要です）。
+
+1. [Releases](https://github.com/YanTKYS/editor/releases) から `editor-vX.Y.Z.zip` をダウンロードし、任意のフォルダー（例: `C:\work\editor`）に展開する（直下に `index.html` と `assets/` が並びます）
+2. `scripts/serve-editor.ps1` をダウンロードするかリポジトリを取得し、PowerShell で展開先のフォルダーを指定して実行する
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\scripts\serve-editor.ps1 -Folder C:\work\editor
+   ```
+
+   `-Port 9000` のようにポート番号を変更できます（既定は 8765）。`-Folder` を省略すると、現在のフォルダーを配信します。
+3. ブラウザで <http://localhost:8765/> を開く
+4. 確認が終わったら、PowerShell で `Ctrl+C` を押して終了する
+
+サーバーは `127.0.0.1` のみで待ち受けるため、同じネットワークの他の PC からはアクセスできません。確認用の簡易サーバーであり、配布用 ZIP には同梱しません。
+
 ### IIS 等の静的 Web サーバー
 
 `dist/` の中身、または Releases の `editor-vX.Y.Z.zip` を展開した中身（直下に `index.html` と `assets/`）を、任意のディレクトリ（例: `C:\inetpub\wwwroot\editor\`）にコピーするだけで動作します。サーバー側の設定やリライトは不要です。
