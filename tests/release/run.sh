@@ -90,6 +90,7 @@ check "Release を作り直さない" '[[ "$(q ".releases | length")" == 1 ]]'
 check "ZIP を差し替える（1 つだけ・新しい内容）" '[[ "$(q ".releases[0].assets | length")" == 1 && "$(q ".releases[0].assets[0].id")" != "$first_asset" && "$(q ".releases[0].assets[0].sha256")" == "$(printf zip-v2 | sha256sum | cut -d" " -f1)" ]]'
 check "本文を更新する" '[[ "$(q ".releases[0].body")" == *"更新"* ]]'
 check "新しい ZIP をアップロードしてから旧 ZIP を削除する" 'q ".calls | join(\"\\n\")" | awk "/^POST releases\/[0-9]+\/assets/{u=NR} /^DELETE releases\/assets/{d=NR} END{exit !(u && d && u < d)}"'
+check "旧 ZIP の削除は、新しい ZIP を正式名にした後に行う" 'q ".calls | join(\"\\n\")" | awk "/^PATCH releases\/assets/{p=NR} /^DELETE releases\/assets/{if(!d)d=NR} END{exit !(p && d && p < d)}"'
 
 echo "# publish.sh: 既存タグが別のコミットを指している"
 new_state moved "{\"tags\":{\"v0.2.0\":\"$OTHER\"}}"
@@ -101,17 +102,47 @@ echo "# publish.sh: 注釈付きタグ"
 new_state annotated "{\"annotated\":{\"v0.2.0\":{\"tagObject\":\"tagobj\",\"commit\":\"$SHA\"}}}"
 check "タグの指すコミットが一致すれば成功する" 'publish "$SHA"'
 
-echo "# publish.sh: 既存 Release の更新中に ZIP のアップロードが失敗"
-new_state upfail "{\"tags\":{\"v0.2.0\":\"$SHA\"},\"releases\":[{\"id\":1,\"tag_name\":\"v0.2.0\",\"name\":\"旧タイトル\",\"body\":\"旧本文\",\"draft\":false,\"assets\":[{\"id\":2,\"name\":\"editor-v0.2.0.zip\",\"sha256\":\"old\"}]}]}"
-check "エラーになる" '! MOCK_FAIL=upload publish "$SHA"'
-check "既存の ZIP・タイトル・本文は変わらない" '[[ "$(q ".releases[0].assets | map(.name + \":\" + .sha256) | join(\",\")")" == "editor-v0.2.0.zip:old" && "$(q ".releases[0].name")" == "旧タイトル" && "$(q ".releases[0].body")" == "旧本文" ]]'
+# 既存の Release（旧 ZIP の内容は sha256 = old）
+existing_release="{\"tags\":{\"v0.2.0\":\"$SHA\"},\"releases\":[{\"id\":1,\"tag_name\":\"v0.2.0\",\"name\":\"旧タイトル\",\"body\":\"旧本文\",\"draft\":false,\"assets\":[{\"id\":2,\"name\":\"editor-v0.2.0.zip\",\"sha256\":\"old\"}]}]}"
+assets_of() { q ".releases[0].assets | map(.name + \":\" + .sha256) | sort | join(\",\")"; }
+unchanged_release() { [[ "$(q ".releases[0].name")" == "旧タイトル" && "$(q ".releases[0].body")" == "旧本文" ]]; }
+new_sha="$(sha256sum "$work/editor-v0.2.0.zip" | cut -d" " -f1)"
 
-echo "# publish.sh: 既存 Release の更新中に名前の変更が失敗"
-new_state renfail "{\"tags\":{\"v0.2.0\":\"$SHA\"},\"releases\":[{\"id\":1,\"tag_name\":\"v0.2.0\",\"name\":\"旧タイトル\",\"body\":\"旧本文\",\"draft\":false,\"assets\":[{\"id\":2,\"name\":\"editor-v0.2.0.zip\",\"sha256\":\"old\"}]}]}"
-check "エラーになる" '! MOCK_FAIL=rename publish "$SHA"'
-check "ZIP は一時的な名前で残り、取得できる状態を保つ" '[[ "$(q ".releases[0].assets | length")" == 1 && "$(q ".releases[0].assets[0].name")" == editor-v0.2.0.uploading-777-* ]]'
+echo "# publish.sh: 既存 Release の更新中に ZIP のアップロードが失敗"
+new_state upfail "$existing_release"
+check "エラーになる" '! MOCK_FAIL=upload publish "$SHA"'
+check "既存の ZIP・タイトル・本文は変わらない" '[[ "$(assets_of)" == "editor-v0.2.0.zip:old" ]] && unchanged_release'
+
+echo "# publish.sh: 旧 ZIP の退避（名前の変更）に失敗"
+new_state backupfail "$existing_release"
+check "エラーになる" '! MOCK_FAIL=rename-from:editor-v0.2.0.zip publish "$SHA"'
+check "旧 ZIP は正式名のまま変わらず、一時ファイルも残さない" '[[ "$(assets_of)" == "editor-v0.2.0.zip:old" ]]'
+check "タイトル・本文は変わらない" 'unchanged_release'
+
+echo "# publish.sh: 新しい ZIP の名前の変更に失敗（旧 ZIP を復旧）"
+new_state renfail "$existing_release"
+check "エラーになる" '! MOCK_FAIL=rename-from:uploading publish "$SHA"'
+check "旧 ZIP を正式名に戻し、一時ファイルも残さない" '[[ "$(assets_of)" == "editor-v0.2.0.zip:old" ]]'
+check "タイトル・本文は変わらない" 'unchanged_release'
+check "復旧したことを通知する" 'grep -q "元に戻しました" "$work/out.log"'
+
+echo "# publish.sh: 新しい ZIP の名前の変更と旧 ZIP の復旧の両方に失敗"
+new_state restorefail "$existing_release"
+check "エラーになる" '! MOCK_FAIL=rename-from:uploading,rename-from:previous publish "$SHA"'
+check "旧 ZIP は削除せず、退避名で取得できる状態で残す" '[[ "$(q ".releases[0].assets | map(select(.sha256 == \"old\")) | length")" == 1 && "$(q ".releases[0].assets[] | select(.sha256 == \"old\") | .name")" == editor-v0.2.0.previous-* ]]'
+check "退避名を明示してエラーを通知する" 'grep -q "editor-v0.2.0.previous-.*として残っています" "$work/out.log"'
+check "タイトル・本文は変わらない" 'unchanged_release'
 sleep 1
-check "同じ実行の再試行（同じ GITHUB_RUN_ID）で正式な名前に戻る" 'publish "$SHA" && [[ "$(q "[.releases[0].assets[].name] | join(\",\")")" == "editor-v0.2.0.zip" ]]'
+check "再実行で差し替えを完了する" 'publish "$SHA"'
+check "新しい ZIP だけが正式名で残る（退避・一時ファイルを削除）" '[[ "$(assets_of)" == "editor-v0.2.0.zip:$new_sha" ]]'
+
+echo "# publish.sh: 差し替え後の旧 ZIP の削除に失敗"
+new_state delfail "$existing_release"
+check "成功する（新しい ZIP は正式名で公開済み）" 'MOCK_FAIL=delete publish "$SHA"'
+check "警告を出す" 'grep -q "::warning::" "$work/out.log"'
+check "正式名は新しい ZIP" '[[ "$(q ".releases[0].assets[] | select(.name == \"editor-v0.2.0.zip\") | .sha256")" == "$new_sha" ]]'
+sleep 1
+check "再実行で退避ファイルを削除する" 'publish "$SHA" && [[ "$(assets_of)" == "editor-v0.2.0.zip:$new_sha" ]]'
 
 echo "# publish.sh: 以前の失敗で下書きの Release と一時ファイルが残っている"
 new_state draft "{\"tags\":{\"v0.2.0\":\"$SHA\"},\"releases\":[{\"id\":1,\"tag_name\":\"v0.2.0\",\"name\":\"$TITLE\",\"body\":\"x\",\"draft\":true,\"assets\":[{\"id\":2,\"name\":\"editor-v0.2.0.uploading-123.zip\",\"sha256\":\"half\"}]}]}"

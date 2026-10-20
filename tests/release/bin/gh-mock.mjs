@@ -88,11 +88,15 @@ if (method === 'GET' && (m = route.match(/^git\/ref\/tags\/(.+)$/))) {
 } else if (method === 'GET' && (m = route.match(/^releases\/(\d+)\/assets$/))) {
   out(findRelease(m[1]).assets);
 } else if (method === 'DELETE' && (m = route.match(/^releases\/assets\/(\d+)$/))) {
+  if (failOn.includes('delete')) fail('Server Error (HTTP 500)');
   for (const r of state.releases) r.assets = r.assets.filter((a) => a.id !== Number(m[1]));
   out({});
 } else if (method === 'PATCH' && (m = route.match(/^releases\/assets\/(\d+)$/))) {
-  if (failOn.includes('rename')) fail('Server Error (HTTP 500)');
   const r = state.releases.find((x) => x.assets.some((a) => a.id === Number(m[1])));
+  // rename: すべての名前変更を失敗させる / rename-from:X: 現在の名前に X を含む資産の名前変更を失敗させる
+  const current = r.assets.find((a) => a.id === Number(m[1])).name;
+  const renameFails = failOn.some((f) => f === 'rename' || (f.startsWith('rename-from:') && current.includes(f.slice(12))));
+  if (renameFails) fail('Server Error (HTTP 500)');
   if (r.assets.some((a) => a.name === fields.name && a.id !== Number(m[1]))) fail('already_exists (HTTP 422)');
   r.assets.find((a) => a.id === Number(m[1])).name = fields.name;
   out({});
