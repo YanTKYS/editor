@@ -3,33 +3,7 @@ import { StorageConflictError, StorageQuotaError, type WriteBatch } from '../../
 import { LocalStorageBackend } from '../../src/storage/localStorageBackend';
 import { APP_ID, SCHEMA_VERSION } from '../../src/storage/schema';
 import { DEFAULT_SETTINGS, type PersistedTabMeta } from '../../src/core/types';
-
-/** 容量制限を設定できる Storage 実装 */
-class MemoryStorage implements Storage {
-  private map = new Map<string, string>();
-  constructor(public quotaChars = Infinity) {}
-  get length() {
-    return this.map.size;
-  }
-  key(i: number) {
-    return [...this.map.keys()][i] ?? null;
-  }
-  getItem(k: string) {
-    return this.map.get(k) ?? null;
-  }
-  setItem(k: string, v: string) {
-    let used = 0;
-    for (const [key, val] of this.map) if (key !== k) used += key.length + val.length;
-    if (used + k.length + v.length > this.quotaChars) throw new DOMException('quota', 'QuotaExceededError');
-    this.map.set(k, String(v));
-  }
-  removeItem(k: string) {
-    this.map.delete(k);
-  }
-  clear() {
-    this.map.clear();
-  }
-}
+import { MemoryStorage } from './memoryStorage';
 
 function tabMeta(id: string, name = id): PersistedTabMeta {
   return {
@@ -133,6 +107,44 @@ describe('LocalStorageBackend', () => {
     expect(storage.getItem('test:meta')).toBe(before);
     const loaded = await backend.load();
     expect(loaded.status === 'ok' && loaded.contents.get('a')).toBe('small');
+  });
+
+  it('タブ削除と本文書き込みの途中で容量超過になったら、直前の保存状態に戻す', async () => {
+    await backend.write(batch({ a: '本文A', b: '本文B' }), { writerId: 'w', expectedRevision: 0 });
+    const before = storage.snapshot();
+    // A を閉じ、B を大きく編集し、新しいタブ C を追加 → B の書き込みで容量超過
+    storage.quotaChars = JSON.stringify(before).length + 50;
+    const b2 = batch({ b: 'B'.repeat(500), c: '新規C' }, ['a']);
+    await expect(backend.write(b2, { writerId: 'w', expectedRevision: 1 })).rejects.toBeInstanceOf(StorageQuotaError);
+    expect(storage.snapshot()).toEqual(before);
+    const loaded = await backend.load();
+    expect(loaded.status === 'ok' && [...loaded.contents]).toEqual([
+      ['a', '本文A'],
+      ['b', '本文B'],
+    ]);
+  });
+
+  it('書き込み途中の容量超過以外の例外でも、直前の保存状態に戻して元の例外を送出する', async () => {
+    await backend.write(batch({ a: '本文A', b: '本文B' }), { writerId: 'w', expectedRevision: 0 });
+    const before = storage.snapshot();
+    const failure = new Error('書き込みエラー');
+    storage.failOn = (key) => (key === 'test:tab:c' ? failure : null);
+    const b2 = batch({ a: '変更A', c: '新規C' }, ['b']);
+    await expect(backend.write(b2, { writerId: 'w', expectedRevision: 1 })).rejects.toBe(failure);
+    storage.failOn = null;
+    expect(storage.snapshot()).toEqual(before);
+  });
+
+  it('メタ情報の書き込みに失敗したら、書き込み済みの本文も元に戻す', async () => {
+    await backend.write(batch({ a: '本文A' }), { writerId: 'w', expectedRevision: 0 });
+    const before = storage.snapshot();
+    storage.failOn = (key) => (key === 'test:meta' ? new DOMException('quota', 'QuotaExceededError') : null);
+    await expect(
+      backend.write(batch({ a: '変更A', n: '新規' }), { writerId: 'w', expectedRevision: 1 }),
+    ).rejects.toBeInstanceOf(StorageQuotaError);
+    storage.failOn = null;
+    expect(storage.snapshot()).toEqual(before);
+    expect(storage.getItem('test:tab:n')).toBeNull();
   });
 
   it('壊れたデータ・新しいスキーマを検出する', async () => {

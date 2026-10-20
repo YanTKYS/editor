@@ -13,6 +13,11 @@ export interface StorageBackend {
    * StorageConflictError を送出する（force 指定時を除く）。
    */
   write(batch: WriteBatch, options: WriteOptions): Promise<{ revision: number }>;
+  /**
+   * 同期的に書き込む（対応する保存先のみ）。成功・失敗が呼び出し時点で確定するため、
+   * ページを閉じる直前でも保存結果を判定できる。
+   */
+  writeSync?(batch: WriteBatch, options: WriteOptions): { revision: number };
   /** 他のブラウザタブによる書き込みを購読する */
   subscribe(listener: (change: ExternalChange) => void): () => void;
   /** 使用量の目安 */

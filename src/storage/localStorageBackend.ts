@@ -95,8 +95,12 @@ export class LocalStorageBackend implements StorageBackend {
   }
 
   /**
-   * 同期的に書き込む。ページを閉じる直前（pagehide）にも確実に書き込めるよう、
-   * 内部処理には await を含めない。
+   * 同期的に書き込む。ページを閉じる直前（beforeunload / pagehide）でも結果を
+   * その場で判定できるよう、内部処理には await を含めない。
+   *
+   * localStorage は複数キーをまとめて更新できないため、変更前の値を記録しておき、
+   * 途中で失敗した場合は逆順に書き戻して、直前に保存した状態へ戻す。
+   * 書き戻しは「以前に実際に保存できていた状態」へ戻る操作なので、容量超過では失敗しない。
    */
   writeSync(batch: WriteBatch, options: WriteOptions): { revision: number } {
     const current = this.currentRevision();
@@ -105,10 +109,16 @@ export class LocalStorageBackend implements StorageBackend {
       throw new StorageConflictError(currentRevision, current?.writerId ?? '');
     }
     const revision = Math.max(currentRevision, options.expectedRevision) + 1;
+    const undo: { key: string; value: string | null }[] = [];
+    const set = (key: string, value: string | null) => {
+      undo.push({ key, value: this.storage.getItem(key) });
+      if (value === null) this.storage.removeItem(key);
+      else this.storage.setItem(key, value);
+    };
     try {
-      // 先に削除して空き容量を確保する
-      for (const id of batch.removed) this.storage.removeItem(this.tabKey(id));
-      for (const [id, content] of batch.contents) this.storage.setItem(this.tabKey(id), content);
+      // 先に削除して空き容量を確保する（失敗時は書き戻す）
+      for (const id of batch.removed) set(this.tabKey(id), null);
+      for (const [id, content] of batch.contents) set(this.tabKey(id), content);
       const meta: PersistedMeta = {
         ...batch.meta,
         schemaVersion: SCHEMA_VERSION,
@@ -117,13 +127,28 @@ export class LocalStorageBackend implements StorageBackend {
         writerId: options.writerId,
         savedAt: Date.now(),
       };
-      this.storage.setItem(this.metaKey, JSON.stringify(meta));
+      set(this.metaKey, JSON.stringify(meta));
     } catch (e) {
+      this.rollback(undo);
       if (isQuotaError(e)) throw new StorageQuotaError();
       throw e;
     }
     if (batch.pruneOrphans) this.pruneOrphans(new Set(batch.meta.tabs.map((t) => t.id)));
     return { revision };
+  }
+
+  /** 記録した変更前の値を逆順に書き戻す */
+  private rollback(undo: { key: string; value: string | null }[]): void {
+    for (let i = undo.length - 1; i >= 0; i--) {
+      const { key, value } = undo[i];
+      try {
+        if (value === null) this.storage.removeItem(key);
+        else this.storage.setItem(key, value);
+      } catch (e) {
+        // 通常は起きない。残りのキーの書き戻しは続ける
+        console.error(`保存データの書き戻しに失敗しました: ${key}`, e);
+      }
+    }
   }
 
   /** meta から参照されていないタブ本文を削除する */

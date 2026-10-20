@@ -121,3 +121,71 @@ test('再読み込み後にカーソル位置とスクロール位置を復元�
   await expect(page.locator('.status-pos')).toHaveText('行 250, 列 3');
   await expect(page.locator('.cm-line', { hasText: /^行 250$/ })).toBeInViewport();
 });
+
+/** localStorage への書き込みを失敗させる（容量超過の再現） */
+async function failStorageWrites(page: import('@playwright/test').Page, keyPattern = '') {
+  await page.evaluate((pattern) => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (!pattern || key.includes(pattern)) throw new DOMException('full', 'QuotaExceededError');
+      return original.call(this, key, value);
+    };
+  }, keyPattern);
+}
+
+test('ページを閉じる直前の保存に失敗したら、閉じる前に警告する', async ({ page }) => {
+  await openApp(page);
+  await failStorageWrites(page);
+  // 自動保存（デバウンス）より前に閉じる
+  await typeInEditor(page, '保存できない編集');
+  const dialog = page.waitForEvent('dialog');
+  await page.close({ runBeforeUnload: true });
+  const d = await dialog;
+  expect(d.type()).toBe('beforeunload');
+  await d.dismiss(); // 閉じるのを取り消す
+  expect(page.isClosed()).toBe(false);
+  await expect(page.locator('.status-save')).toHaveText('保存失敗');
+  expect(await editorText(page)).toBe('保存できない編集');
+});
+
+test('保存に成功していれば、閉じるときに警告しない', async ({ page }) => {
+  await openApp(page);
+  let dialogs = 0;
+  page.on('dialog', (d) => {
+    dialogs++;
+    void d.accept();
+  });
+  await typeInEditor(page, '保存できる編集');
+  await page.close({ runBeforeUnload: true });
+  await expect.poll(() => page.isClosed()).toBe(true);
+  expect(dialogs).toBe(0);
+});
+
+test('タブを閉じて編集した後の保存が失敗しても、再読み込みで直前の保存内容が復元される', async ({ page }) => {
+  await openApp(page);
+  await typeInEditor(page, 'タブAの保存済み本文');
+  await page.keyboard.press('Alt+n');
+  await page.keyboard.type('タブBの保存済み本文');
+  await saveNow(page);
+  const tabB = await page.evaluate(
+    () => (JSON.parse(localStorage.getItem('webTextEditor:meta') ?? '{}') as { tabs: { id: string }[] }).tabs[1].id,
+  );
+
+  // タブ B の本文書き込みだけ失敗させ、A を閉じて B を編集する
+  await failStorageWrites(page, `tab:${tabB}`);
+  await page.locator('.tab').first().locator('.tab-close').click();
+  await page.getByRole('dialog').getByRole('button', { name: '閉じる', exact: true }).click();
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type('（未保存の追記）');
+  await page.keyboard.press('Control+s');
+  await expect(page.locator('.status-save')).toHaveText('保存失敗');
+
+  page.on('dialog', (d) => void d.accept()); // 終了時の警告を承諾して再読み込み
+  await page.reload();
+  await expect(page.locator('html[data-ready="true"]')).toBeAttached();
+  await expect(page.locator('.tab .tab-label')).toHaveText(['新規 1', '新規 2']);
+  expect(await editorText(page)).toBe('タブBの保存済み本文');
+  await page.keyboard.press('Alt+PageUp');
+  expect(await editorText(page)).toBe('タブAの保存済み本文');
+});

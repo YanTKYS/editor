@@ -276,7 +276,8 @@ export class App {
 
   private wireGlobalEvents(): void {
     window.addEventListener('keydown', (e) => this.onGlobalKey(e), true);
-    // 閉じる・非表示時に未保存の変更を書き込む（localStorage は同期的に書き込まれる）
+    // 閉じる・非表示時に未保存の変更を書き込む。
+    // localStorage への書き込みは同期的に行われ、flush() から戻った時点で成否が確定している。
     const flushNow = () => {
       if (this.cursorDirty) {
         this.cursorDirty = false;
@@ -290,8 +291,8 @@ export class App {
     });
     window.addEventListener('beforeunload', (e) => {
       flushNow();
-      const k = this.persistence.status.kind;
-      if (this.persistence.hasUnsavedChanges || k === 'error' || k === 'unavailable') {
+      // 保存に失敗した・保存を停止している（競合等）・書き込み完了待ちの変更があれば警告する
+      if (this.persistence.hasUnsavedChanges || this.persistence.status.kind === 'error') {
         e.preventDefault();
         e.returnValue = '';
       }

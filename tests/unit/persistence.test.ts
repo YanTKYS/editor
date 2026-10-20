@@ -7,7 +7,9 @@ import {
   type WriteBatch,
   type WriteOptions,
 } from '../../src/storage/backend';
+import { LocalStorageBackend } from '../../src/storage/localStorageBackend';
 import { PersistenceController, type SaveStatus } from '../../src/storage/persistence';
+import { MemoryStorage } from './memoryStorage';
 
 class FakeBackend implements StorageBackend {
   readonly name = 'fake';
@@ -38,7 +40,7 @@ class FakeBackend implements StorageBackend {
   async clear() {}
 }
 
-const contents: Record<string, string> = { a: 'A', b: 'B' };
+let contents: Record<string, string> = { a: 'A', b: 'B' };
 const provider = {
   buildMeta: () => ({
     schemaVersion: 1,
@@ -67,6 +69,7 @@ describe('PersistenceController', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    contents = { a: 'A', b: 'B' };
     backend = new FakeBackend();
     ctrl = new PersistenceController(backend, provider, 'me', { delay: 500, maxWait: 2000, retryDelay: 1000 });
     statuses = [];
@@ -155,5 +158,67 @@ describe('PersistenceController', () => {
   it('backend がなければ利用不可状態になる', () => {
     const c = new PersistenceController(null, provider, 'me');
     expect(c.status.kind).toBe('unavailable');
+  });
+
+  it('非同期の書き込みが完了するまでは未保存として扱う', async () => {
+    ctrl.markTabDirty('a');
+    const p = ctrl.flush();
+    expect(ctrl.hasUnsavedChanges).toBe(true);
+    expect(await p).toBe(true);
+    expect(ctrl.hasUnsavedChanges).toBe(false);
+  });
+});
+
+describe('PersistenceController + LocalStorageBackend（同期書き込み）', () => {
+  let storage: MemoryStorage;
+  let backend: LocalStorageBackend;
+  let ctrl: PersistenceController;
+
+  beforeEach(() => {
+    contents = { a: '保存済みA', b: '保存済みB' };
+    storage = new MemoryStorage();
+    backend = new LocalStorageBackend(storage, 'test');
+    ctrl = new PersistenceController(backend, provider, 'me');
+    ctrl.start(0);
+    ctrl.markAllDirty(['a', 'b']);
+  });
+
+  it('保存結果は flush() から戻った時点で確定している（ページ終了直前の判定用）', async () => {
+    void ctrl.flush();
+    expect(ctrl.hasUnsavedChanges).toBe(false);
+    expect(ctrl.status.kind).toBe('saved');
+
+    storage.failOn = () => new DOMException('quota', 'QuotaExceededError');
+    contents.a = '未保存の編集';
+    ctrl.markTabDirty('a');
+    void ctrl.flush(); // await しない（beforeunload と同じ条件）
+    expect(ctrl.hasUnsavedChanges).toBe(true);
+    expect(ctrl.status).toMatchObject({ kind: 'error', reason: 'quota' });
+  });
+
+  it('タブを閉じて編集した後の保存が失敗しても、直前の保存データを保ち、再試行で反映する', async () => {
+    expect(await ctrl.flush()).toBe(true);
+    const before = storage.snapshot();
+
+    // タブ A を閉じ、B を編集 → B の書き込みで失敗
+    delete contents.a;
+    contents.b = '編集後B';
+    ctrl.markTabRemoved('a');
+    ctrl.markTabDirty('b');
+    storage.failOn = (key) => (key === 'test:tab:b' ? new DOMException('quota', 'QuotaExceededError') : null);
+    expect(await ctrl.flush()).toBe(false);
+    expect(storage.snapshot()).toEqual(before);
+    const loaded = await backend.load();
+    expect(loaded.status === 'ok' && [...loaded.contents]).toEqual([
+      ['a', '保存済みA'],
+      ['b', '保存済みB'],
+    ]);
+
+    // 容量が空いたら、閉じたタブの削除と編集内容がまとめて反映される
+    storage.failOn = null;
+    expect(await ctrl.flush()).toBe(true);
+    const after = await backend.load();
+    expect(after.status === 'ok' && [...after.contents]).toEqual([['b', '編集後B']]);
+    expect(storage.getItem('test:tab:a')).toBeNull();
   });
 });

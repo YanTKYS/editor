@@ -51,6 +51,8 @@ export class PersistenceController {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private firstDirtyAt: number | null = null;
   private lastFailureAt = 0;
+  /** 完了待ちの非同期書き込みの数 */
+  private inFlight = 0;
   private revision = 0;
   private suspended = false;
   private _status: SaveStatus = { kind: 'saved', at: null };
@@ -80,7 +82,16 @@ export class PersistenceController {
   }
 
   /** 未保存の変更があるか */
+  /**
+   * 保存が確定していない変更があるか。
+   * 書き込み中（非同期の保存先で完了待ち）の変更も未保存として扱う。
+   */
   get hasUnsavedChanges(): boolean {
+    return this.hasPendingChanges || this.inFlight > 0;
+  }
+
+  /** まだ書き込みを開始していない変更があるか */
+  private get hasPendingChanges(): boolean {
     return this.metaDirty || this.dirtyTabs.size > 0 || this.removedTabs.size > 0;
   }
 
@@ -154,7 +165,7 @@ export class PersistenceController {
 
   private schedule(): void {
     if (!this.backend || this.suspended) return;
-    if (!this.hasUnsavedChanges) return;
+    if (!this.hasPendingChanges) return;
     if (this._status.kind === 'saved') this.setStatus({ kind: 'pending' });
     if (!this.canWrite()) return;
     const now = Date.now();
@@ -179,14 +190,17 @@ export class PersistenceController {
 
   /**
    * 未保存の変更を直ちに書き込む。
-   * localStorage への書き込みは呼び出し時点で同期的に行われる（pagehide 時の保存に必要）。
+   * 保存先が同期書き込みに対応していれば（localStorage）、成功・失敗とそれに伴う状態
+   * （未保存フラグ・status）は呼び出しから戻った時点で確定している。
+   * そのため beforeunload では flush() の直後に hasUnsavedChanges を見ればよい。
    * @returns 保存に成功した（または保存すべき変更がない）場合 true
    */
   flush(options: { force?: boolean; pruneOrphans?: boolean } = {}): Promise<boolean> {
     this.clearTimer();
-    if (!this.backend || this.suspended) return Promise.resolve(false);
+    const backend = this.backend;
+    if (!backend || this.suspended) return Promise.resolve(false);
     if (!options.force && !this.canWrite()) return Promise.resolve(false);
-    if (!this.hasUnsavedChanges && !options.force) {
+    if (!this.hasPendingChanges && !options.force) {
       return Promise.resolve(true);
     }
     const dirty = [...this.dirtyTabs];
@@ -196,43 +210,65 @@ export class PersistenceController {
     const contents = new Map<string, string>();
     for (const id of dirty) if (liveIds.has(id)) contents.set(id, this.provider.getContent(id));
     const batch: WriteBatch = { meta, contents, removed, pruneOrphans: options.pruneOrphans };
+    const writeOptions = {
+      writerId: this.writerId,
+      expectedRevision: this.revision,
+      force: options.force,
+    };
     // 書き込み中に発生した変更を失わないよう、先に dirty をクリアしておき、失敗時に戻す
     this.dirtyTabs.clear();
     this.removedTabs.clear();
     this.metaDirty = false;
     this.firstDirtyAt = null;
-    const promise = this.backend.write(batch, {
-      writerId: this.writerId,
-      expectedRevision: this.revision,
-      force: options.force,
-    });
-    return promise.then(
+
+    if (backend.writeSync) {
+      try {
+        this.onWriteSuccess(backend.writeSync(batch, writeOptions).revision);
+        return Promise.resolve(true);
+      } catch (e) {
+        this.onWriteFailure(e, dirty, removed);
+        return Promise.resolve(false);
+      }
+    }
+    this.inFlight++;
+    return backend.write(batch, writeOptions).then(
       ({ revision }) => {
-        this.revision = revision;
-        if (this.hasUnsavedChanges) {
-          this.setStatus({ kind: 'pending' });
-          this.schedule();
-        } else {
-          this.setStatus({ kind: 'saved', at: Date.now() });
-        }
+        this.inFlight--;
+        this.onWriteSuccess(revision);
         return true;
       },
       (e: unknown) => {
-        for (const id of dirty) if (!this.removedTabs.has(id)) this.dirtyTabs.add(id);
-        for (const id of removed) if (!this.dirtyTabs.has(id)) this.removedTabs.add(id);
-        this.metaDirty = true;
-        this.lastFailureAt = Date.now();
-        if (e instanceof StorageConflictError) {
-          this.markConflict();
-        } else if (e instanceof StorageQuotaError) {
-          this.setStatus({ kind: 'error', reason: 'quota', message: e.message });
-        } else {
-          const message = e instanceof Error ? e.message : String(e);
-          this.setStatus({ kind: 'error', reason: 'unknown', message });
-        }
+        this.inFlight--;
+        this.onWriteFailure(e, dirty, removed);
         return false;
       },
     );
+  }
+
+  private onWriteSuccess(revision: number): void {
+    this.revision = revision;
+    if (this.hasPendingChanges) {
+      this.setStatus({ kind: 'pending' });
+      this.schedule();
+    } else {
+      this.setStatus({ kind: 'saved', at: Date.now() });
+    }
+  }
+
+  /** 書き込めなかった変更を未保存として戻し、状態を更新する */
+  private onWriteFailure(e: unknown, dirty: string[], removed: string[]): void {
+    for (const id of dirty) if (!this.removedTabs.has(id)) this.dirtyTabs.add(id);
+    for (const id of removed) if (!this.dirtyTabs.has(id)) this.removedTabs.add(id);
+    this.metaDirty = true;
+    this.lastFailureAt = Date.now();
+    if (e instanceof StorageConflictError) {
+      this.markConflict();
+    } else if (e instanceof StorageQuotaError) {
+      this.setStatus({ kind: 'error', reason: 'quota', message: e.message });
+    } else {
+      const message = e instanceof Error ? e.message : String(e);
+      this.setStatus({ kind: 'error', reason: 'unknown', message });
+    }
   }
 
   /** 競合時: このタブの内容で保存データを上書きする */
