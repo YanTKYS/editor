@@ -186,6 +186,46 @@ test('3・4 分割では比較する 2 つのペインを指定でき、他の�
   await expect(page.locator('[class*="cm-diff-"]')).toHaveCount(0);
 });
 
+test('比較前に空だったペイン（アクティブな空ペインを含む）は、比較終了後も空のまま復元される', async ({ page }) => {
+  await addTabs(page, [
+    ['a.txt', SAMPLE_A],
+    ['b.txt', SAMPLE_B],
+  ]);
+  await page.locator('.split-button[data-split="4"]').click();
+  await expect(visiblePanes(page)).toHaveCount(4);
+  // 空のペイン 2 とペイン 4 を作り、空のペイン 2 をアクティブにする
+  await page.evaluate(() => {
+    const app = (window as unknown as { __editorApp: { layout: { show(id: null, pane: number): void; setActive(p: number): void } } }).__editorApp;
+    app.layout.show(null, 1);
+    app.layout.setActive(1);
+  });
+  const before = await layoutNames(page);
+  expect(before.tabs[1]).toBeNull();
+  expect(before.tabs[3]).toBeNull();
+  expect(before.active).toBe(1);
+
+  // 空のペインを比較対象にする
+  await startDiff(page, 'a.txt', 'b.txt', { paneA: 1, paneB: 3 });
+  const during = await layoutNames(page);
+  expect(during.tabs[1]).toBe('a.txt');
+  expect(during.tabs[3]).toBe('b.txt');
+  await expect(pane(page, 3).locator('.cm-diff-chg')).toHaveText('beta changed');
+
+  // 比較中に編集しておく
+  await paneEditor(page, 3).click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type('?');
+
+  await bar(page).getByRole('button', { name: '比較終了' }).click();
+  await expect(bar(page)).toBeHidden();
+  expect(await layoutNames(page)).toEqual(before);
+  await expect(pane(page, 1).locator('.pane-empty')).toBeVisible();
+  await expect(pane(page, 3).locator('.pane-empty')).toBeVisible();
+  // 比較中の編集は、タブに残っている
+  expect(await tabText(page, 'b.txt')).toBe(`${SAMPLE_B}?`);
+  await expect(page.locator('[class*="cm-diff-"]')).toHaveCount(0);
+});
+
 function numberedLines(n: number, edits: Record<number, string> = {}, extraTop = 0): string {
   const lines: string[] = [];
   for (let i = 0; i < extraTop; i++) lines.push(`追加行 ${i}`);

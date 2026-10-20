@@ -302,20 +302,19 @@ export class DiffController {
     }
   }
 
-  /** 比較開始前の配置に戻す。比較中に閉じたタブは、現在表示しているタブで補う */
+  /**
+   * 比較開始前の配置に戻す。比較開始前に空だったペインは空のまま戻す。
+   * 比較開始前のタブが比較中に閉じられていた場合だけ、そのペインに現在表示している
+   * （他のペインに割り当てられていない）タブを補う。
+   */
   private restoreLayout(prev: PaneLayoutState): void {
     const { layout, store } = this.host;
     const valid = new Set(store.all.map((t) => t.id));
-    const used = new Set<string>();
+    const reserved = new Set(prev.tabs.filter((id): id is string => id !== null && valid.has(id)));
     const tabs = prev.tabs.map((id, i) => {
-      let pick: string | null = id !== null && valid.has(id) ? id : null;
-      if (pick === null) {
-        const cur = layout.tabs[i];
-        if (cur && valid.has(cur)) pick = cur;
-      }
-      if (pick !== null && used.has(pick)) pick = null;
-      if (pick !== null) used.add(pick);
-      return pick;
+      if (id === null || valid.has(id)) return id;
+      const cur = layout.tabs[i];
+      return cur && valid.has(cur) && !reserved.has(cur) ? cur : null;
     });
     this.ownLayoutChange = true;
     try {

@@ -158,6 +158,55 @@ describe('DiffController', () => {
     expect(layout.toJSON()).toEqual(before);
   });
 
+  it('比較開始前に空だったペインは、比較対象にしても終了後に空へ戻す（空のアクティブペインを含む）', () => {
+    layout.load({ count: 4, tabs: ['a', null, 'c', null], active: 1 }, order());
+    const before = layout.toJSON();
+    // 空のペイン 1・3 を比較先にし、c も別のペインへ移す
+    diff.start({ a: 'd', b: 'c', paneA: 1, paneB: 3 });
+    expect(layout.tabs).toEqual(['a', 'd', null, 'c']);
+    diff.end();
+    expect(layout.toJSON()).toEqual(before);
+    expect(layout.tabs).toEqual(['a', null, 'c', null]);
+    expect(layout.active).toBe(1);
+    // 空のペインに戻しても、比較した 2 つのタブの本文は残っている
+    expect(editor.getContent('d')).toBe('dddd');
+    expect(editor.getContent('c')).toBe('unrelated');
+    expect(hosts[1].querySelectorAll('[class*="cm-diff-"]').length).toBe(0);
+  });
+
+  it('1 画面・2 分割で空のペインを含む配置も、そのまま復元する', () => {
+    layout.load({ count: 2, tabs: ['a', null], active: 1 }, order());
+    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
+    diff.end();
+    expect(layout.toJSON()).toEqual({ count: 2, tabs: ['a', null], active: 1 });
+  });
+
+  it('比較開始前のタブが比較中に閉じられた場合だけ、そのペインを現在のタブで補う', () => {
+    layout.setCount(3, order());
+    expect(layout.tabs).toEqual(['a', 'b', 'c']);
+    diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
+    const index = store.indexOf('c');
+    store.remove('c');
+    editor.removeTab('c');
+    layout.removeTab('c', order(), index); // ペイン 3 には隣の d が表示される
+    expect(layout.tabs[2]).toBe('d');
+    diff.end();
+    expect(layout.tabs).toEqual(['a', 'b', 'd']);
+  });
+
+  it('比較開始前のタブが閉じられても、他のペインに割り当てたタブでは補わない（同じタブを重複表示しない）', () => {
+    layout.load({ count: 3, tabs: ['a', 'c', 'd'], active: 0 }, order());
+    diff.start({ a: 'a', b: 'c', paneA: 0, paneB: 1 });
+    const index = store.indexOf('d');
+    store.remove('d');
+    editor.removeTab('d');
+    layout.removeTab('d', order(), index);
+    diff.end();
+    const shown = layout.tabs.filter((id) => id !== null);
+    expect(new Set(shown).size).toBe(shown.length);
+    expect(layout.tabs.slice(0, 2)).toEqual(['a', 'c']);
+  });
+
   it('比較中に分割数を変えた場合は、比較終了で配置を戻さない', () => {
     diff.start({ a: 'a', b: 'b', paneA: 0, paneB: 1 });
     layout.setCount(3, order());
