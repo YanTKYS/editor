@@ -56,7 +56,7 @@ test('置換と一括置換（Undo 可能）', async ({ page }) => {
   await replaceInput(page).fill('bar');
   await panel(page).getByRole('button', { name: '置換', exact: true }).click();
   expect(await editorText(page)).toBe('bar foo foo');
-  await page.getByRole('button', { name: 'すべて置換', exact: true }).click();
+  await page.getByRole('button', { name: 'このタブをすべて置換', exact: true }).click();
   expect(await editorText(page)).toBe('bar bar bar');
   await expect(page.locator('.toast').last()).toContainText('2 件を置換しました');
   await page.locator('.cm-content').click();
@@ -70,7 +70,7 @@ test('正規表現の置換で参照を使える', async ({ page }) => {
   await page.getByRole('button', { name: '正規表現' }).click();
   await searchInput(page).fill('(\\d+)-(\\d+)-(\\d+)');
   await replaceInput(page).fill('$1年$2月$3日');
-  await page.getByRole('button', { name: 'すべて置換', exact: true }).click();
+  await page.getByRole('button', { name: 'このタブをすべて置換', exact: true }).click();
   expect(await editorText(page)).toBe('2024年05月01日\n2025年12月31日');
 });
 
@@ -86,7 +86,7 @@ test('全タブ横断検索と結果からの移動、全タブ置換', async ({
   await page.getByRole('button', { name: '全タブ検索' }).click();
   const results = page.locator('.results-panel');
   await expect(results).toBeVisible();
-  await expect(results.locator('.results-title')).toHaveText('「東京」の検索結果: 2 件（2 タブ）');
+  await expect(results.locator('.results-title')).toHaveText('全タブの検索結果「東京」: 2 件（2 タブ）');
   await expect(results.locator('.result-item')).toHaveCount(2);
 
   await results.locator('.result-item').first().click();
@@ -100,7 +100,7 @@ test('全タブ横断検索と結果からの移動、全タブ置換', async ({
 
   await page.keyboard.press('Control+h');
   await replaceInput(page).fill('TOKYO');
-  await page.getByRole('button', { name: '全タブで置換' }).click();
+  await page.getByRole('button', { name: '全タブをすべて置換' }).click();
   await page.getByRole('dialog').getByRole('button', { name: '置換する' }).click();
   expect(await editorText(page)).toBe('一行目\nTOKYO都の資料');
   await page.keyboard.press('Alt+PageDown');

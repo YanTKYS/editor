@@ -80,6 +80,8 @@ export class App {
   private statusQueued = false;
   private splitter!: HTMLElement;
   private workspace!: HTMLElement;
+  private operationTarget!: HTMLElement;
+  private fileState!: HTMLElement;
   private dropOverlay!: HTMLElement;
   private channel: BroadcastChannel | null = null;
 
@@ -161,7 +163,15 @@ export class App {
       },
     });
     const split = h('div', { class: 'split' }, [this.paneArea.el, this.splitter, this.preview.el]);
-    this.workspace = h('main', { class: 'workspace' }, [this.findPanel.el, this.diffBar.el, split, this.findPanel.resultsEl]);
+    this.operationTarget = h('span', { class: 'operation-target' });
+    this.fileState = h('span', { class: 'operation-file-state' });
+    const context = h('div', { class: 'operation-context', attrs: { 'aria-label': '現在の操作対象' } }, [
+      this.operationTarget,
+      this.fileState,
+    ]);
+    this.workspace = h('main', { class: 'workspace' }, [
+      context, this.findPanel.el, this.diffBar.el, split, this.findPanel.resultsEl,
+    ]);
     this.dropOverlay = h('div', { class: 'drop-overlay', attrs: { 'aria-hidden': 'true' } }, [
       h('div', { class: 'drop-message', text: 'ドロップしてファイルを開く' }),
     ]);
@@ -504,6 +514,7 @@ export class App {
     this.updateSplitButtons();
     // TabStore のアクティブタブは「アクティブなペインに表示しているタブ」とする
     this.store.activate(layout.activeTabId);
+    this.scheduleStatusUpdate();
     this.editor.requestMeasure();
     this.persistence.markMetaDirty();
   }
@@ -577,6 +588,7 @@ export class App {
       },
     );
     this.paneArea.setDiffRoles(st && { a: st.a, b: st.b, result: st.result });
+    this.scheduleStatusUpdate();
     this.editor.requestMeasure();
   }
 
@@ -922,12 +934,12 @@ export class App {
     switch (s.kind) {
       case 'saved': {
         const time = s.at ? new Date(s.at).toLocaleTimeString('ja-JP') : '';
-        this.statusBar.setSaveState('ブラウザ保存済', 'ok', time ? `最終保存: ${time}` : '変更はありません');
+        this.statusBar.setSaveState('自動保存済み', 'ok', time ? `最終保存: ${time}` : '変更はありません');
         n.dismiss('storage');
         break;
       }
       case 'pending':
-        this.statusBar.setSaveState('保存待ち…', 'pending', 'まもなくブラウザ内に自動保存します');
+        this.statusBar.setSaveState('自動保存待ち…', 'pending', 'まもなくブラウザ内に自動保存します');
         if (n.has('storage') && this.persistence.status.kind === 'pending') n.dismiss('storage');
         break;
       case 'error':
@@ -1063,6 +1075,19 @@ export class App {
 
   private updateStatus(): void {
     const tab = this.store.active;
+    const result = this.diff.status?.result === this.layout.active;
+    const name = result ? '差分結果（読み取り専用）' : tab?.name ?? 'タブなし';
+    const target = `操作対象：ペイン ${this.layout.active + 1} — ${name}`;
+    this.operationTarget.textContent = target;
+    this.operationTarget.title = `${target}\n${result || !tab
+      ? 'このペインには検索・置換・書き出しの対象となるタブがありません。'
+      : '検索・置換・書き出しは、このペインのタブが対象です（全タブ操作を除く）。'}`;
+    this.fileState.hidden = !tab || result;
+    this.fileState.textContent = tab?.modifiedSinceFile ? 'ファイル未書き出し ●' : 'ファイル変更なし';
+    this.fileState.dataset.modified = String(!!tab?.modifiedSinceFile);
+    this.fileState.title = tab?.modifiedSinceFile
+      ? 'ブラウザ内の自動保存とは別に、PC への書き出しが必要な変更があります。'
+      : '最後の読み込み・書き出し以降の変更はありません。新規の空タブもこの状態になります。';
     if (!tab) {
       this.statusBar.clear();
       return;

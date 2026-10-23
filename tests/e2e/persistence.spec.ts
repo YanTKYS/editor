@@ -25,7 +25,7 @@ test('再読み込み後にタブ構成・本文・アクティブタブ・設�
 test('自動保存（デバウンス）で保存される', async ({ page }) => {
   await openApp(page);
   await typeInEditor(page, '自動保存のテスト');
-  await expect(page.locator('.status-save')).toHaveText('ブラウザ保存済', { timeout: 6000 });
+  await expect(page.locator('.status-save')).toHaveText('自動保存済み', { timeout: 6000 });
   await page.reload();
   await expect(page.locator('html[data-ready="true"]')).toBeAttached();
   expect(await editorText(page)).toBe('自動保存のテスト');
@@ -66,7 +66,7 @@ test('別のブラウザタブで更新された場合は競合として検知�
   // このタブの内容で上書き
   await page.getByRole('button', { name: 'このタブの内容で上書き保存' }).click();
   await page.getByRole('dialog').getByRole('button', { name: '上書き保存' }).click();
-  await expect(page.locator('.status-save')).toHaveText('ブラウザ保存済');
+  await expect(page.locator('.status-save')).toHaveText('自動保存済み');
   await expect(other.locator('.banner[data-banner="storage"]')).toBeVisible();
   await other.close();
 });
@@ -91,7 +91,7 @@ test('容量超過で保存に失敗しても編集内容を保持し、利用�
   // 容量が空いたら再試行で保存できる
   await page.evaluate(() => (window as unknown as { __restoreSetItem: () => void }).__restoreSetItem());
   await page.getByRole('button', { name: '再試行' }).click();
-  await expect(page.locator('.status-save')).toHaveText('ブラウザ保存済');
+  await expect(page.locator('.status-save')).toHaveText('自動保存済み');
   await expect(page.locator('.banner[data-banner="storage"]')).toHaveCount(0);
 });
 

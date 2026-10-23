@@ -31,5 +31,5 @@ export const activeTab = (page: Page) => page.locator('.tab.active .tab-label');
 /** 自動保存（デバウンス）を待たずに保存する */
 export async function saveNow(page: Page): Promise<void> {
   await page.keyboard.press('Control+s');
-  await expect(page.locator('.status-save')).toHaveText('ブラウザ保存済');
+  await expect(page.locator('.status-save')).toHaveText('自動保存済み');
 }

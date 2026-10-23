@@ -98,6 +98,6 @@ export class StatusBar {
   setSaveState(text: string, kind: 'ok' | 'pending' | 'error' | 'warning', detail: string): void {
     this.save.textContent = text;
     this.save.dataset.kind = kind;
-    this.save.title = `${detail}\nクリックで保存領域の情報を表示`;
+    this.save.title = `ブラウザ内保存：${detail}\nPC へのファイル書き出しとは別の状態です。\nクリックで保存領域の情報を表示`;
   }
 }
