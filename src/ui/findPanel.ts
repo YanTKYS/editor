@@ -84,6 +84,7 @@ export class FindPanel {
     });
 
     const findRow = h('div', { class: 'find-row' }, [
+      h('span', { class: 'find-scope', text: 'このタブ内', title: '上の操作対象に表示されているタブを検索・置換します' }),
       this.toggleReplaceBtn,
       this.searchInput,
       this.caseBtn,
@@ -107,8 +108,8 @@ export class FindPanel {
       h('span', { class: 'find-indent' }),
       this.replaceInput,
       button('置換', '現在の一致箇所を置換して次へ (Enter)', () => host.replaceNext()),
-      button('すべて置換', 'このタブ内をすべて置換', () => host.replaceAll()),
-      button('全タブで置換', 'すべてのタブで置換', () => host.replaceAllTabs()),
+      button('このタブをすべて置換', 'このタブ内をすべて置換', () => host.replaceAll()),
+      button('全タブをすべて置換', 'すべてのタブで置換', () => host.replaceAllTabs()),
       h('span', {
         class: 'find-help',
         text: '正規表現時: $1 $& で参照、\\n \\t で改行・タブ',
@@ -239,8 +240,8 @@ export class FindPanel {
     const tabsWithHits = results.filter((r) => r.total > 0);
     const capped = results.some((r) => r.capped);
     this.resultsHeader.textContent = total
-      ? `「${query}」の検索結果: ${total.toLocaleString()} 件${capped ? '以上' : ''}（${tabsWithHits.length} タブ）`
-      : `「${query}」は見つかりませんでした`;
+      ? `全タブの検索結果「${query}」: ${total.toLocaleString()} 件${capped ? '以上' : ''}（${tabsWithHits.length} タブ）`
+      : `全タブの検索結果：「${query}」は見つかりませんでした`;
     for (const r of tabsWithHits) {
       const group = h('div', { class: 'results-group', attrs: { role: 'listitem' } });
       group.append(

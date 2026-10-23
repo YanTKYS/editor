@@ -1572,3 +1572,37 @@ button.status-item:disabled {
     min-width: 0;
   }
 }
+
+/* 操作対象とファイル状態は一行で示し、長い名前は表示幅に収める。 */
+.operation-context {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  min-width: 0;
+  padding: 3px 8px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.operation-target {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.operation-file-state {
+  flex: none;
+  white-space: nowrap;
+}
+.operation-file-state[data-modified='true'] {
+  font-weight: 600;
+}
+.find-scope {
+  font-size: 12px;
+  white-space: nowrap;
+}
+@media (max-width: 480px) {
+  .operation-context { gap: 6px; }
+}

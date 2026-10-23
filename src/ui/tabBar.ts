@@ -193,6 +193,7 @@ export class TabBar {
     el.classList.toggle('displayed', paneIndex >= 0);
     el.classList.toggle('active', active);
     el.classList.toggle('modified', tab.modifiedSinceFile);
+    el.setAttribute('aria-label', `${tab.name}${paneIndex >= 0 ? `、ペイン ${paneIndex + 1}` : ''}${tab.modifiedSinceFile ? '、ファイル未書き出し' : ''}`);
     el.setAttribute('aria-selected', String(active));
     el.setAttribute('tabindex', active ? '0' : '-1');
     el.setAttribute('aria-controls', 'editor-area');
@@ -294,11 +295,15 @@ export class TabBar {
   }
 
   private showTabList(): void {
-    const items: MenuItem[] = this.store.all.map((t) => ({
-      label: `${t.modifiedSinceFile ? '● ' : ''}${t.name}`,
-      checked: t.id === this.store.activeTabId,
-      action: () => this.actions.activate(t.id),
-    }));
+    const items: MenuItem[] = this.store.all.map((t) => {
+      const pane = this.actions.paneOf(t.id);
+      const location = this.actions.paneCount() > 1 ? (pane >= 0 ? ` — ペイン ${pane + 1}` : ' — 未表示') : '';
+      return {
+        label: `${t.name}${location}${t.modifiedSinceFile ? '（ファイル未書き出し）' : ''}`,
+        checked: t.id === this.store.activeTabId,
+        action: () => this.actions.activate(t.id),
+      };
+    });
     new PopupMenu(items, { label: 'タブ一覧' }).showAt(this.listButton);
   }
 }

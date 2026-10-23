@@ -236,14 +236,14 @@ test('検索・置換はアクティブペインを対象とし、全タブ検�
   await expect(pane(page, 1).locator('.cm-searchMatch')).toHaveCount(1);
   await expect(pane(page, 0).locator('.cm-searchMatch')).toHaveCount(0);
   await page.getByRole('textbox', { name: '置換後の文字列' }).fill('bar');
-  await page.locator('.find-panel').getByRole('button', { name: 'すべて置換', exact: true }).click();
+  await page.locator('.find-panel').getByRole('button', { name: 'このタブをすべて置換', exact: true }).click();
   expect(await paneText(page, 0)).toBe('foo a');
   expect(await paneText(page, 1)).toBe('bar b');
 
   // 全タブ検索は表示していないタブ（c.txt）も対象
   await page.getByRole('textbox', { name: '検索する文字列' }).fill('foo');
   await page.getByRole('button', { name: '全タブ検索' }).click();
-  await expect(page.locator('.results-title')).toHaveText('「foo」の検索結果: 2 件（2 タブ）');
+  await expect(page.locator('.results-title')).toHaveText('全タブの検索結果「foo」: 2 件（2 タブ）');
   // 結果から未表示のタブへ移動するとアクティブペインに表示する
   await page.locator('.result-item', { hasText: 'foo c' }).click();
   expect(await layoutState(page)).toEqual({ count: 2, active: 1, tabs: ['a.txt', 'c.txt'] });
@@ -320,7 +320,7 @@ test('v0.1.0 の保存データを移行して読み込む', async ({ page }) =>
   await setSplit(page, 2);
   expect(await paneText(page, 1)).toBe('旧データ1');
   await page.keyboard.press('Control+s');
-  await expect(page.locator('.status-save')).toHaveText('ブラウザ保存済');
+  await expect(page.locator('.status-save')).toHaveText('自動保存済み');
   const meta = await page.evaluate(() => JSON.parse(localStorage.getItem('webTextEditor:meta')!));
   expect(meta.schemaVersion).toBe(2);
   expect(meta.layout.count).toBe(2);
@@ -390,7 +390,7 @@ test('空のアクティブペインを含む分割状態を、再読み込み�
   const before = await layoutState(page);
   expect(before).toEqual({ count: 3, active: 1, tabs: ['a.txt', null, 'c.txt'] });
   await page.keyboard.press('Control+s');
-  await expect(page.locator('.status-save')).toHaveText('ブラウザ保存済');
+  await expect(page.locator('.status-save')).toHaveText('自動保存済み');
 
   await page.reload();
   await expect(page.locator('html[data-ready="true"]')).toBeAttached();
