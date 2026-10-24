@@ -166,7 +166,7 @@ export function buildMenus(app: App): MenuDefinition[] {
               .map((c) => cmd(c, undefined, { checked: app.layout.active === Number(c.slice(-1)) - 1 }))
           : []),
         { separator: true },
-        { heading: '差分比較（2 つのタブを並べて比較）' },
+        { heading: '差分比較（比較元・比較先・結果）' },
         { label: '差分比較…', action: () => void app.openDiffDialog() },
         ...(app.diff.active
           ? [

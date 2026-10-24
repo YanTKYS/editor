@@ -849,6 +849,25 @@ select {
   line-height: 1.6;
 }
 
+.dialog-buttons .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.diff-swap {
+  align-self: flex-start;
+}
+
+.diff-target-error {
+  margin: 0;
+  color: var(--danger);
+  line-height: 1.6;
+}
+
+.diff-dialog-fields select[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
 .diff-notes {
   display: flex;
   flex-direction: column;

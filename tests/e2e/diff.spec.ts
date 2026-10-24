@@ -175,22 +175,40 @@ test('比較できるタブが 2 つ未満なら案内し、同じペインの�
   const [a, b, result] = ['比較元（変更前）のペイン', '比較先（変更後）のペイン', '差分結果を表示するペイン'].map((l) => d.getByLabel(l));
   // 同じペインを複数の役割に指定できない
   await b.selectOption('0');
-  await d.getByRole('button', { name: '比較する' }).click();
+  await expect(a).toHaveAttribute('aria-invalid', 'true');
+  await expect(b).toHaveAttribute('aria-invalid', 'true');
+  // Enter 相当の送信経路でも、不正な指定では閉じたり比較開始したりしない。
+  await d.locator('form').evaluate((form: HTMLFormElement) => form.requestSubmit());
+  await expect(d).toBeVisible();
+  await expect(d.getByRole('button', { name: '比較する' })).toBeDisabled();
   await expect(d.getByRole('alert')).toContainText('それぞれ別のペイン');
   await b.selectOption('1');
   await result.selectOption('1');
-  await d.getByRole('button', { name: '比較する' }).click();
+  await expect(d.getByRole('button', { name: '比較する' })).toBeDisabled();
   await expect(d.getByRole('alert')).toContainText('それぞれ別のペイン');
   // 比較先が空のペインなら、タブが必要であることを案内する
   await result.selectOption('2');
   await b.selectOption('3');
-  await d.getByRole('button', { name: '比較する' }).click();
+  await expect(d.getByRole('button', { name: '比較する' })).toBeDisabled();
+  await expect(d.getByRole('alert')).toContainText('比較先（ペイン 4）にはタブが表示されていません');
+  await d.getByRole('button', { name: '比較元と比較先を入れ替え' }).click();
+  await expect(d.getByRole('alert')).toContainText('比較元（ペイン 4）にはタブが表示されていません');
+  await expect(a).toHaveAttribute('aria-invalid', 'true');
+  await expect(d.getByRole('button', { name: '比較する' })).toBeDisabled();
+  await d.getByRole('button', { name: '比較元と比較先を入れ替え' }).click();
   await expect(d.getByRole('alert')).toContainText('比較先（ペイン 4）にはタブが表示されていません');
   await a.selectOption('2');
   await b.selectOption('1');
   await result.selectOption('3');
-  await d.getByRole('button', { name: '比較する' }).click();
+  await expect(d.getByRole('button', { name: '比較する' })).toBeDisabled();
   await expect(d.getByRole('alert')).toContainText('比較元（ペイン 3）にはタブが表示されていません');
+  // 正しい組み合わせに直すと、エラーと各欄の無効表示が解消する。
+  await a.selectOption('0');
+  await b.selectOption('1');
+  await result.selectOption('2');
+  await expect(d.getByRole('alert')).toBeHidden();
+  await expect(d.getByRole('button', { name: '比較する' })).toBeEnabled();
+  await expect(d.locator('select[aria-invalid="true"]')).toHaveCount(0);
   await expect(bar(page)).toBeHidden();
   await d.getByRole('button', { name: 'キャンセル' }).click();
   expect(await layoutNames(page)).toEqual({ count: 4, active: 0, tabs: ['a.txt', 'b.txt', null, null] });
@@ -580,4 +598,51 @@ test('日本語を含む大きめのファイルでも、比較中の入力が�
   expect((await tabText(page, 'big-b.txt')).startsWith('日本語のテスト入力です。あいうえお第0行')).toBe(true);
   // 入力が落ち着いたら、結果が更新される
   await expect.poll(() => paneLines(page, 2).then((l) => l[0]), { timeout: 10_000 }).toBe('@@ -1,1 +1,1 @@');
+});
+
+
+test('比較元と比較先をキーボードで入れ替え、キャンセルすると配置を維持する', async ({ page }) => {
+  await addTabs(page, [['before.txt', ORIGINAL], ['after.txt', MODIFIED]]);
+  await arrange(page, 1, ['before.txt']);
+  const before = await layoutNames(page);
+  await openDiffDialog(page);
+  const d = dialog(page);
+  const swap = d.getByRole('button', { name: '比較元と比較先を入れ替え', exact: true });
+  await swap.focus();
+  await page.keyboard.press('Space');
+  await expect(swap).toBeFocused();
+  await expect(d.getByLabel('比較元（変更前）のペイン')).toHaveValue('1');
+  await expect(d.getByLabel('比較先（変更後）のペイン')).toHaveValue('0');
+  await expect(d.getByLabel('差分結果を表示するペイン')).toHaveValue('2');
+  await expect(d.getByRole('status')).toContainText('「after.txt」（変更前）と、ペイン 1 の「before.txt」（変更後）');
+  await expect(d.locator('.diff-preview-pane').nth(0)).toContainText('比較先');
+  await expect(d.locator('.diff-preview-pane').nth(1)).toContainText('比較元');
+  await page.keyboard.press('Enter'); // 入れ替えボタンの Enter は比較開始ではなく再入れ替え
+  await expect(d.getByLabel('比較元（変更前）のペイン')).toHaveValue('0');
+  await expect(d).toBeVisible();
+  await page.keyboard.press('Escape');
+  expect(await layoutNames(page)).toEqual(before);
+  await expect(bar(page)).toBeHidden();
+});
+
+test('入れ替えた方向で比較を開始し、比較中も結果ペインを維持して再指定できる', async ({ page }) => {
+  await addTabs(page, [['a.txt', ORIGINAL], ['b.txt', MODIFIED], ['keep.txt', '元の内容']]);
+  await arrange(page, 3, ['a.txt', 'b.txt', 'keep.txt']);
+  const before = await layoutNames(page);
+  await openDiffDialog(page);
+  await dialog(page).getByRole('button', { name: '比較元と比較先を入れ替え' }).click();
+  await dialog(page).getByRole('button', { name: '比較する', exact: true }).click();
+  await expect(pane(page, 1).locator('.pane-diff-badge')).toHaveText('比較元');
+  await expect(pane(page, 0).locator('.pane-diff-badge')).toHaveText('比較先');
+  expect(await paneLines(page, 2)).toContain('- timeout=60');
+  expect(await paneLines(page, 2)).toContain('+ timeout=30');
+  await bar(page).getByRole('button', { name: '比較対象…' }).click();
+  const d = dialog(page);
+  await expect(d.getByLabel('差分結果を表示するペイン')).toHaveValue('2');
+  await d.getByRole('button', { name: '比較元と比較先を入れ替え' }).click();
+  await d.getByRole('button', { name: '比較する', exact: true }).click();
+  expect(await paneLines(page, 2)).toEqual(UNIFIED);
+  await endDiff(page);
+  expect(await layoutNames(page)).toEqual(before);
+  await expect(paneEditor(page, 2)).toHaveText('元の内容');
 });
