@@ -156,6 +156,8 @@ tests/
 
 ## 配備
 
+GitHub Actions ではアプリのテスト・ビルドに Node.js 22 を使用します。CI・Release のアーティファクト転送と Pages のアクションは Node.js 24 対応版を使用します。アクション自身の実行ランタイムと、`actions/setup-node` で選択するアプリの Node.js バージョンは別の設定です。
+
 `npm run build` で `dist/` に静的ファイル一式が出力されます。アセットは相対パスで参照するため、任意のサブパスに配置できます。
 
 ### GitHub Pages
