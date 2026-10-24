@@ -1,3 +1,4 @@
+import { createId } from '../core/emitter';
 import type { DiffTargets } from '../app/diffController';
 import { showDialog } from './dialogs';
 import { h } from './dom';
@@ -10,7 +11,7 @@ export interface DiffDialogOptions {
   /** 比較中に対象を変更する場合 */
   changing: boolean;
   initial: DiffTargets;
-  /** 選択内容の検証（エラーメッセージを返すと閉じない） */
+  /** 選択時・送信前の検証（エラーメッセージがあれば比較を開始しない） */
   validate(targets: DiffTargets): string | null;
 }
 
@@ -41,9 +42,25 @@ export async function showDiffDialog(options: DiffDialogOptions): Promise<DiffTa
   const preview = h('div', { class: 'diff-preview', attrs: { 'aria-hidden': 'true' } });
   const summary = h('p', { class: 'diff-summary-note', attrs: { role: 'status' } });
   const notes = h('div', { class: 'diff-notes' });
+  const errorId = `diff-error-${createId()}`;
+  const error = h('p', { class: 'diff-target-error', attrs: { id: errorId, role: 'alert' } });
+  error.hidden = true;
 
   const refresh = () => {
     const t = read();
+    const message = options.validate(t);
+    error.textContent = message ?? '';
+    error.hidden = !message;
+    summary.hidden = !!message;
+    for (const { role, el } of selects) {
+      const index = t[role.key];
+      const duplicate = ROLES.some((other) => other.key !== role.key && t[other.key] === index);
+      const empty = role.key !== 'result' && !paneNames[index];
+      const invalid = duplicate || empty;
+      el.setAttribute('aria-invalid', String(invalid));
+      if (invalid) el.setAttribute('aria-describedby', errorId);
+      else el.removeAttribute('aria-describedby');
+    }
     const roleOf = (i: number) => ROLES.find((r) => t[r.key] === i);
     preview.replaceChildren(
       ...paneNames.map((name, i) => {
@@ -74,7 +91,21 @@ export async function showDiffDialog(options: DiffDialogOptions): Promise<DiffTa
   for (const s of selects) s.el.addEventListener('change', refresh);
   refresh();
 
-  const body = h('div', { class: 'diff-dialog-fields' }, [preview, ...selects.map((s) => s.field), summary, notes]);
+  const swap = h('button', {
+    class: 'btn diff-swap',
+    text: '比較元と比較先を入れ替え',
+    type: 'button',
+    on: { click: () => {
+      const before = selects[0].el.value;
+      selects[0].el.value = selects[1].el.value;
+      selects[1].el.value = before;
+      // 通常の選択変更と同じ経路でプレビューと比較ボタンを更新する。
+      selects[0].el.dispatchEvent(new Event('change', { bubbles: true }));
+    } },
+  });
+  const body = h('div', { class: 'diff-dialog-fields' }, [
+    preview, selects[0].field, selects[1].field, swap, selects[2].field, error, summary, notes,
+  ]);
   const result = await showDialog<'ok' | null>({
     title: options.changing ? '差分比較の対象を変更' : '差分比較',
     body,
@@ -83,7 +114,7 @@ export async function showDiffDialog(options: DiffDialogOptions): Promise<DiffTa
     initialFocus: selects[0].el,
     buttons: [
       { label: 'キャンセル', value: null },
-      { label: '比較する', value: 'ok', primary: true },
+      { label: '比較する', value: 'ok', primary: true, disabled: () => !!options.validate(read()) },
     ],
     validate: (v) => (v === 'ok' ? options.validate(read()) : null),
   });

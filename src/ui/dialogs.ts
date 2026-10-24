@@ -7,6 +7,8 @@ export interface DialogButton<T> {
   primary?: boolean;
   /** 危険な操作（赤系の表示） */
   danger?: boolean;
+  /** 選択内容に応じて無効化する（フォームの change 時にも評価） */
+  disabled?: () => boolean;
 }
 
 export interface DialogOptions<T> {
@@ -66,6 +68,10 @@ export function showDialog<T>(options: DialogOptions<T>): Promise<T> {
         type: b.primary ? 'submit' : 'button',
         dataset: { index: String(i) },
       });
+      if (b.disabled) {
+        btn.disabled = b.disabled();
+        form.addEventListener('change', () => { btn.disabled = b.disabled!(); });
+      }
       if (b.primary) primaryButton = btn;
       if (!b.primary) btn.addEventListener('click', () => finish(b.value));
       footer.append(btn);
@@ -95,7 +101,7 @@ export function showDialog<T>(options: DialogOptions<T>): Promise<T> {
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const primary = options.buttons.find((b) => b.primary);
-      if (primary) finish(primary.value);
+      if (primary && !primary.disabled?.()) finish(primary.value);
     });
     dialog.addEventListener('cancel', (e) => {
       e.preventDefault();
