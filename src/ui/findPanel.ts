@@ -38,6 +38,8 @@ export class FindPanel {
   private readonly toggleReplaceBtn: HTMLButtonElement;
   private readonly resultsList: HTMLElement;
   private readonly resultsHeader: HTMLElement;
+  private readonly resultsNotice: HTMLElement;
+  private stale = false;
   private opts: SearchOptions = { ...EMPTY_SEARCH };
   private visible = false;
 
@@ -155,6 +157,12 @@ export class FindPanel {
 
     // 横断検索の結果
     this.resultsHeader = h('span', { class: 'results-title' });
+    this.resultsNotice = h('p', {
+      class: 'results-notice',
+      text: '検索結果が古くなっています。「再検索」で更新してください。',
+      attrs: { role: 'status' },
+    });
+    this.resultsNotice.hidden = true;
     this.resultsList = h('div', { class: 'results-list', attrs: { role: 'list' } });
     this.resultsEl = h('section', { class: 'results-panel', attrs: { 'aria-label': '全タブの検索結果' } }, [
       h('div', { class: 'results-header' }, [
@@ -175,6 +183,7 @@ export class FindPanel {
           on: { click: () => this.hideResults() },
         }),
       ]),
+      this.resultsNotice,
       this.resultsList,
     ]);
     this.resultsEl.hidden = true;
@@ -234,7 +243,20 @@ export class FindPanel {
 
   /* ---------- 横断検索の結果 ---------- */
 
+  get resultsStale(): boolean {
+    return this.stale;
+  }
+
+  /** 再検索せず、表示中の結果が古いことだけを一度通知する。 */
+  markResultsStale(): void {
+    if (this.resultsEl.hidden || this.stale) return;
+    this.stale = true;
+    this.resultsNotice.hidden = false;
+  }
+
   showResults(results: TabSearchResult[], query: string): void {
+    this.stale = false;
+    this.resultsNotice.hidden = true;
     this.resultsList.replaceChildren();
     const total = results.reduce((n, r) => n + r.total, 0);
     const tabsWithHits = results.filter((r) => r.total > 0);

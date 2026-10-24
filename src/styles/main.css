@@ -1130,6 +1130,15 @@ select {
   white-space: nowrap;
 }
 
+.results-notice {
+  flex: none;
+  margin: 0;
+  padding: 4px 8px;
+  background: var(--warning-bg);
+  border-bottom: 1px solid var(--warning-border);
+  font-size: 12px;
+}
+
 .results-list {
   flex: 1;
   overflow: auto;

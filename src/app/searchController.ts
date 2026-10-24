@@ -67,6 +67,7 @@ export class SearchController implements FindPanelHost {
       options.caseSensitive !== this.options.caseSensitive ||
       options.regexp !== this.options.regexp ||
       options.wholeWord !== this.options.wholeWord;
+    if (changed) this.invalidateResults();
     this.options = options;
     this.query = createQuery(options);
     this.app.editor.setSearch(this.query, true);
@@ -193,6 +194,10 @@ export class SearchController implements FindPanelHost {
   }
 
   gotoResult(tabId: string, match: DocMatch): void {
+    if (this.app.findPanel.resultsStale) {
+      this.app.notifications.toast('検索結果が古くなっています。「再検索」で更新してください。', 'warning');
+      return;
+    }
     if (!this.app.store.get(tabId)) {
       this.app.notifications.toast('このタブは既に閉じられています。', 'warning');
       return;
@@ -212,6 +217,10 @@ export class SearchController implements FindPanelHost {
   }
 
   /* ---------- 状態変化への追従 ---------- */
+
+  invalidateResults(): void {
+    this.app.findPanel.markResultsStale();
+  }
 
   onActiveTabChanged(): void {
     this.updateCount(true);
