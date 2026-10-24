@@ -253,6 +253,10 @@ export class App {
   /* ====================================================================== */
 
   private onStoreChange(c: TabChange): void {
+    if (c.type === 'add' || c.type === 'remove' || c.type === 'reset' ||
+        (c.type === 'update' && c.keys.includes('name'))) {
+      this.search.invalidateResults();
+    }
     switch (c.type) {
       case 'add':
         this.persistence.markTabDirty(c.id);
@@ -303,6 +307,7 @@ export class App {
   }
 
   private onDocChange(id: string): void {
+    this.search.invalidateResults();
     this.diff.onDocChange(id);
     this.persistence.markTabDirty(id);
     const tab = this.store.get(id);
