@@ -3,6 +3,8 @@
 ブラウザだけで動作する、タブ形式のテキストエディタです（v0.4.0）。変更履歴は [CHANGELOG.md](CHANGELOG.md) を参照してください。
 エディタエンジンに [CodeMirror 6](https://codemirror.net/) を使用し、Notepad++ のような日常的なテキスト編集を想定しています。
 
+この README は `main` ブランチのソースを基準にしています。「未リリース」の機能は [変更履歴](CHANGELOG.md#未リリース) で区別しています。配布済み ZIP のバージョンと内容は [Releases](https://github.com/YanTKYS/editor/releases) と該当バージョンの変更履歴を確認してください。
+
 - サーバー処理・外部 API・実行時の CDN 読み込みは一切ありません（静的ファイルのみで動作）
 - 編集内容はブラウザ内（localStorage）に自動保存され、外部へ送信されません
 - 対応ブラウザ: Chrome / Edge の最新版
@@ -214,7 +216,7 @@ Windows では、リポジトリの `scripts/serve-editor.ps1` で簡易 HTTP �
 | 文書 | 内容 |
 | --- | --- |
 | [変更履歴](CHANGELOG.md) | バージョンごとの実装済みの変更 |
-| [UI/UX 改善案と対応状況](docs/feature-ideas.md) | v0.4.0 で完了した提案と、今後検討する未実装の候補 |
+| [UI/UX 改善案と対応状況](docs/feature-ideas.md) | 対応済み・main マージ済みの未リリース変更・未実装候補の整理と、棚卸し時点の集計 |
 
 ## 利用ライブラリ
 
