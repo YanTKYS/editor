@@ -5,6 +5,7 @@ import type { TabStore } from '../core/tabStore';
 import { buildDiffMarks } from '../editor/diffMarks';
 import { currentSpec, resultExtensions, unifiedSpec } from '../editor/diffResult';
 import type { EditorManager } from '../editor/editorManager';
+import type { DiffExportSnapshot } from '../files/diffExport';
 
 /** 比較の指定: 比較元・比較先・結果表示の 3 つのペイン（0 始まり）。比較するタブは各ペインに表示中のタブ */
 export interface DiffTargets {
@@ -96,6 +97,28 @@ export class DiffController {
       total: s.diff.blocks.length,
       current: s.current,
       precise: s.diff.precise,
+    };
+  }
+
+  /** 再計算待ちを解消し、画面と同じ最新の差分を取得する。元のタブは変更しない */
+  snapshotForExport(): DiffExportSnapshot | null {
+    const s = this.session;
+    if (!s) return null;
+    if (s.timer !== null) {
+      clearTimeout(s.timer);
+      s.timer = null;
+      this.recompute();
+    }
+    if (this.session !== s) return null;
+    const tabs = this.host.store.all;
+    const a = tabs.findIndex((t) => t.id === s.aTab);
+    const b = tabs.findIndex((t) => t.id === s.bTab);
+    if (a < 0 || b < 0) return null;
+    return {
+      a: { name: tabs[a].name, pane: s.a, tabNumber: a + 1 },
+      b: { name: tabs[b].name, pane: s.b, tabNumber: b + 1 },
+      summary: { added: s.diff.added, deleted: s.diff.deleted, changed: s.diff.changed, precise: s.diff.precise },
+      text: s.unified.text,
     };
   }
 

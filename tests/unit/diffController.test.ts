@@ -435,6 +435,50 @@ describe('DiffController（比較元・比較先・結果表示の 3 ペイン�
     });
   });
 
+  describe('書き出し用のスナップショット', () => {
+    it('比較前・終了後には結果がなく、比較方向と最新の名前で独立した値を返す', () => {
+      expect(diff.snapshotForExport()).toBeNull();
+      begin({ a: 1, b: 0, result: 2 });
+      store.update('b', { name: '変更後の名前.txt' });
+      const snapshot = diff.snapshotForExport()!;
+      expect(snapshot.a).toEqual({ name: '変更後の名前.txt', pane: 1, tabNumber: 2 });
+      expect(snapshot.b).toEqual({ name: 'a.txt', pane: 0, tabNumber: 1 });
+      expect(snapshot.text).toContain('- 2\n+ two');
+      diff.next();
+      const status = diff.status;
+      expect(diff.snapshotForExport()!.text).toBe(snapshot.text);
+      expect(diff.status).toEqual(status);
+      diff.end();
+      expect(diff.snapshotForExport()).toBeNull();
+      expect(snapshot.text).toContain('- four');
+    });
+
+    it('再計算待ちの最新編集を反映し、本文・未書き出し状態・配置・Undo/Redo を維持する', () => {
+      begin();
+      editor.setActivePane(1);
+      editor.view.dispatch({ changes: { from: 4, to: 5, insert: 'two' }, userEvent: 'input.type' });
+      const meta = store.all.map((t) => ({ ...t }));
+      const layoutBefore = layout.toJSON();
+      expect(diff.status?.total).toBe(2);
+      const snapshot = diff.snapshotForExport()!;
+      expect(snapshot.text).toBe('@@ -3,0 +4,1 @@\n+ four');
+      expect(lines(hosts[2])).toEqual(snapshot.text.split('\n'));
+      expect(store.all).toEqual(meta);
+      expect(layout.toJSON()).toEqual(layoutBefore);
+      expect(editor.getContent('a')).toBe('one\ntwo\nthree');
+      expect(editor.getContent('b')).toBe('one\ntwo\nthree\nfour');
+      const changed = vi.fn();
+      diff.events.on('change', changed);
+      vi.advanceTimersByTime(2000);
+      expect(changed).not.toHaveBeenCalled();
+      expect(undo(editor.view)).toBe(true);
+      expect(editor.getContent('b')).toBe('one\n2\nthree\nfour');
+      expect(redo(editor.view)).toBe(true);
+      expect(editor.getContent('b')).toBe('one\ntwo\nthree\nfour');
+      expect(snapshot.text).toBe('@@ -3,0 +4,1 @@\n+ four');
+    });
+  });
+
   describe('比較を続けられない操作', () => {
     const closeTab = (id: string) => {
       const index = store.indexOf(id);

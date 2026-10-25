@@ -4,6 +4,7 @@ export interface DiffBarActions {
   previous(): void;
   next(): void;
   change(): void;
+  export(): void;
   end(): void;
 }
 
@@ -46,6 +47,7 @@ export class DiffBar {
         h('span', { class: 'diff-spacer' }),
         this.prev,
         this.next,
+        button('差分を書き出し', '最新の差分を記録用のテキストファイルとしてダウンロードする', () => actions.export()),
         button('比較対象…', '比較するタブを変更する', () => actions.change()),
         button('比較終了', '差分比較を終了して通常の編集に戻る', () => actions.end(), 'diff-end'),
       ],
