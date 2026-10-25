@@ -163,26 +163,65 @@ export class FileCommands {
 
   /** タブを UTF-8 で書き出す。ダウンロードを開始できた場合に true（保存完了の検知ではない） */
   exportTab(id: string, name: string): boolean {
-    const tab = this.app.store.get(id);
-    if (!tab) return false;
-    const fileName = exportFileName(name, tab.mode);
-    const content = this.app.editor.getContent(id);
-    try {
-      downloadText(content, fileName, tab.eol, tab.bom, MIME_BY_MODE[tab.mode] ?? 'text/plain');
-    } catch {
-      this.app.notifications.toast('ファイルを書き出せませんでした。本文と未書き出し状態は保持しています。', 'error');
-      return false;
-    }
+    const snapshot = this.downloadTab(id, name);
+    if (!snapshot) return false;
+    const { tab, fileName } = snapshot;
     const wasSjis = tab.encoding === 'Shift_JIS';
-    this.app.store.update(id, { modifiedSinceFile: false, encoding: 'UTF-8' });
-    this.app.mixedEol.delete(id);
-    this.app.scheduleStatusUpdate();
+    this.markExported(id);
     this.app.notifications.toast(
       `「${fileName}」を書き出しました（UTF-8${tab.bom ? ' BOM 付き' : ''}・${tab.eol}）。${wasSjis ? ' ※Shift_JIS ではなく UTF-8 で保存されています。' : ''}`,
       'success',
       wasSjis ? 6000 : 3000,
     );
     return true;
+  }
+
+  /** 保存を確認でき、出力後の変更もない場合にだけ、閉じてよいことを返す。 */
+  async exportTabAndConfirm(id: string, name: string): Promise<boolean> {
+    const snapshot = this.downloadTab(id, name);
+    if (!snapshot) return false;
+    const note = h('p', {
+      text: `「${snapshot.fileName}」を保存できた場合のみ「保存を確認した」を選んでください。保存を中止した場合や、まだ保存していない場合は、タブを閉じずに戻ってください。`,
+      attrs: { tabindex: '0' },
+    });
+    const saved = await showDialog<boolean>({
+      title: 'ファイルの保存確認', body: note, initialFocus: note, cancelValue: false,
+      buttons: [
+        { label: '閉じずに戻る', value: false },
+        { label: '保存を確認した', value: true, primary: true },
+      ],
+    });
+    if (!saved) return false;
+    const current = this.app.store.get(id);
+    const keys = ['name', 'mode', 'eol', 'bom', 'encoding'] as const;
+    if (!current || keys.some(key => current[key] !== snapshot.tab[key]) ||
+        this.app.editor.getContent(id) !== snapshot.content) {
+      this.app.notifications.toast('書き出し後にタブの内容・設定が変更されたため、閉じませんでした。もう一度書き出してください。', 'warning');
+      return false;
+    }
+    this.markExported(id);
+    return true;
+  }
+
+  /** ダウンロード開始と状態更新を分け、保存確認待ちでは未書き出し状態を保持する。 */
+  private downloadTab(id: string, name: string) {
+    const tab = this.app.store.get(id);
+    if (!tab) return null;
+    const fileName = exportFileName(name, tab.mode);
+    const content = this.app.editor.getContent(id);
+    try {
+      downloadText(content, fileName, tab.eol, tab.bom, MIME_BY_MODE[tab.mode] ?? 'text/plain');
+    } catch {
+      this.app.notifications.toast('ファイルを書き出せませんでした。本文と未書き出し状態は保持しています。', 'error');
+      return null;
+    }
+    return { tab: { ...tab }, fileName, content };
+  }
+
+  private markExported(id: string): void {
+    this.app.store.update(id, { modifiedSinceFile: false, encoding: 'UTF-8' });
+    this.app.mixedEol.delete(id);
+    this.app.scheduleStatusUpdate();
   }
 
   /** 通常のファイルをZIPにまとめ、保存確認後に同じ内容のタブだけ状態を更新する。 */

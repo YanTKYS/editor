@@ -661,7 +661,7 @@ export class App {
         ],
       });
       if (answer === 'cancel') return false;
-      if (answer === 'export' && !this.files.exportTab(id, tab.name)) return false;
+      if (answer === 'export' && !(await this.files.exportTabAndConfirm(id, tab.name))) return false;
       if (!this.store.get(id)) return false;
     }
     if (!this.isPristine(id)) {
