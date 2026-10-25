@@ -139,6 +139,36 @@ export interface ReplacementExample {
   after: string;
 }
 
+function replacementExample(query: SearchQuery, state: EditorState, match: RawMatch): ReplacementExample {
+  const line = state.doc.lineAt(match.from);
+  const length = match.to - match.from;
+  const after = replacementFor(query, match);
+  return {
+    line: line.number,
+    column: match.from - line.from + 1,
+    context: state.sliceDoc(Math.max(line.from, match.from - 30), Math.min(line.to, match.from + 60)),
+    before: state.sliceDoc(match.from, match.from + Math.min(length, REPLACE_PREVIEW_CHARS)) +
+      (length > REPLACE_PREVIEW_CHARS ? '…' : ''),
+    after: after.length > REPLACE_PREVIEW_CHARS ? after.slice(0, REPLACE_PREVIEW_CHARS) + '…' : after,
+  };
+}
+
+/** 表示するページの例だけを読み、一致が上限に達したら走査を打ち切る。 */
+export function getReplacementExamples(
+  query: SearchQuery,
+  source: EditorState | Text | string,
+  limit = REPLACE_PREVIEW_MATCHES,
+): ReplacementExample[] {
+  if (limit <= 0) return [];
+  const state = toState(source);
+  const examples: ReplacementExample[] = [];
+  for (const match of iterateMatches(query, state)) {
+    examples.push(replacementExample(query, state, match));
+    if (examples.length >= limit) break;
+  }
+  return examples;
+}
+
 /** 実行時と同じ検索・置換規則で件数と確認例を作る。全件分の変更配列は保持しない。 */
 export function buildReplacePreview(
   query: SearchQuery,
@@ -148,20 +178,9 @@ export function buildReplacePreview(
   const state = toState(source);
   const examples: ReplacementExample[] = [];
   let count = 0;
-  const clip = (s: string) => s.length > REPLACE_PREVIEW_CHARS ? s.slice(0, REPLACE_PREVIEW_CHARS) + '…' : s;
   for (const match of iterateMatches(query, state)) {
     count++;
-    if (examples.length >= limit) continue;
-    const line = state.doc.lineAt(match.from);
-    const length = match.to - match.from;
-    examples.push({
-      line: line.number,
-      column: match.from - line.from + 1,
-      context: state.sliceDoc(Math.max(line.from, match.from - 30), Math.min(line.to, match.from + 60)),
-      before: state.sliceDoc(match.from, match.from + Math.min(length, REPLACE_PREVIEW_CHARS)) +
-        (length > REPLACE_PREVIEW_CHARS ? '…' : ''),
-      after: clip(replacementFor(query, match)),
-    });
+    if (examples.length < limit) examples.push(replacementExample(query, state, match));
   }
   return { count, examples };
 }
