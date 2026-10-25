@@ -12,6 +12,8 @@ import {
   type TabMeta,
 } from '../core/types';
 import { EditorManager, type RestoreInfo } from '../editor/editorManager';
+import { diffExportFileName, formatDiffExport } from '../files/diffExport';
+import { downloadText } from '../files/fileIO';
 import { StorageUnavailableError } from '../storage/backend';
 import { LocalStorageBackend } from '../storage/localStorageBackend';
 import { PersistenceController, type SaveStatus } from '../storage/persistence';
@@ -151,6 +153,7 @@ export class App {
       previous: () => this.diff.previous(),
       next: () => this.diff.next(),
       change: () => void this.openDiffDialog(),
+      export: () => this.exportDiff(),
       end: () => this.endDiff(),
     });
     this.splitter = h('div', {
@@ -569,6 +572,18 @@ export class App {
   endDiff(): void {
     this.diff.end(true);
     this.editor.focus();
+  }
+
+  exportDiff(): void {
+    try {
+      const snapshot = this.diff.snapshotForExport();
+      if (!snapshot) return this.notifications.toast('差分比較を開始してから書き出してください。');
+      const now = new Date();
+      downloadText(formatDiffExport(snapshot, now), diffExportFileName(now), 'LF', false);
+      this.notifications.toast('差分テキストのダウンロードを開始しました。');
+    } catch {
+      this.notifications.toast('差分テキストを書き出せませんでした。元のタブの状態は変更していません。');
+    }
   }
 
   /** 保存用のペイン配置（差分比較中も、結果表示のために外したタブを元のペインに戻した配置を保存する） */

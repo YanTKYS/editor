@@ -177,6 +177,7 @@ export function buildMenus(app: App): MenuDefinition[] {
           ? [
               cmd('diffPrev'),
               cmd('diffNext'),
+              { label: '差分を書き出し', action: () => app.exportDiff() } as MenuItem,
               { label: '比較終了', action: () => app.endDiff() } as MenuItem,
             ]
           : []),
