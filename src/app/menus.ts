@@ -80,6 +80,11 @@ export function buildMenus(app: App): MenuDefinition[] {
         { heading: 'PC へのファイル書き出し' },
         cmd('exportFile', 'ファイルに書き出し'),
         { label: '名前を付けて書き出し…', action: () => void app.files.exportActive(true) },
+        {
+          label: '未書き出しタブをまとめて書き出し…',
+          disabled: !app.store.all.some(tab => tab.modifiedSinceFile),
+          action: () => void app.files.exportModifiedTabs(),
+        },
         { separator: true },
         { label: 'バックアップを書き出し（全タブ・設定 JSON）', action: () => app.files.exportBackup() },
         { label: 'バックアップから復元…', action: () => void app.files.importBackup() },

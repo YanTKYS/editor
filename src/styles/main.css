@@ -1717,3 +1717,44 @@ button.status-item:disabled {
   flex: none;
   accent-color: var(--accent);
 }
+
+.dialog-batch-export {
+  width: min(760px, calc(100vw - 24px));
+}
+.batch-export-controls {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  background: var(--panel-bg);
+}
+.batch-export-controls button:disabled {
+  opacity: 0.5;
+}
+.batch-export-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.batch-export-row input {
+  flex: none;
+  accent-color: var(--accent);
+}
+.batch-export-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.batch-export-row strong,
+.batch-export-row span span {
+  display: block;
+}
+.batch-export-row span span {
+  font-size: 12px;
+  color: var(--fg-muted);
+}

@@ -16,6 +16,7 @@ import {
 } from '../files/fileIO';
 import { alertDialog, confirmDialog, promptDialog, showDialog } from '../ui/dialogs';
 import { h } from '../ui/dom';
+import { selectBatchExport } from '../ui/batchExportDialog';
 import { APP_VERSION, type App } from './app';
 
 const MIME_BY_MODE: Record<string, string> = {
@@ -39,6 +40,8 @@ function timestamp(): string {
  * 「ブラウザ内保存（localStorage）」とは別の、PC 上のファイルとのやり取りを扱う。
  */
 export class FileCommands {
+  private batchExportOpen = false;
+
   constructor(private readonly app: App) {}
 
   /* ---------- 読み込み ---------- */
@@ -171,6 +174,62 @@ export class FileCommands {
       'success',
       wasSjis ? 6000 : 3000,
     );
+  }
+
+  /** 通常のファイルをZIPにまとめ、保存確認後に同じ内容のタブだけ状態を更新する。 */
+  async exportModifiedTabs(): Promise<void> {
+    if (this.batchExportOpen) return;
+    if (!this.app.store.all.some(tab => tab.modifiedSinceFile)) {
+      this.app.notifications.toast('未書き出しのタブはありません。');
+      return;
+    }
+    this.batchExportOpen = true;
+    let downloaded = false;
+    try {
+      const { batchExportFiles, batchExportArchive, sameExportMetadata } = await import('../files/batchExport');
+      const candidates = batchExportFiles(this.app.store.all);
+      if (!candidates.length) return;
+      const byId = new Map(candidates.map(file => [file.id, file]));
+      const validate = (ids: string[]) => ids.some(id => !sameExportMetadata(byId.get(id)!, this.app.store.get(id)))
+        ? '選択したタブの情報が変更されました。キャンセルして一覧を開き直してください。' : null;
+      const ids = await selectBatchExport(candidates, validate);
+      if (!ids?.length) return;
+      const error = validate(ids);
+      if (error) { this.app.notifications.toast(error, 'warning'); return; }
+      const snapshots = ids.map(id => ({ ...byId.get(id)!, content: this.app.editor.getContent(id) }));
+      const blob = batchExportArchive(snapshots);
+      downloadBlob(blob, `editor-files-${timestamp()}.zip`);
+      downloaded = true;
+      const note = h('p', {
+        text: 'ZIP を保存できた場合のみ「保存を確認した」を選んでください。保存を中止した場合や、まだ保存していない場合は未書き出しのまま閉じてください。',
+        attrs: { tabindex: '0' },
+      });
+      const saved = await showDialog<boolean>({
+        title: 'ZIP の保存確認', body: note, initialFocus: note, cancelValue: false,
+        buttons: [
+          { label: '未書き出しのまま閉じる', value: false },
+          { label: '保存を確認した', value: true, primary: true },
+        ],
+      });
+      if (!saved) return;
+      let marked = 0;
+      for (const snapshot of snapshots) {
+        const tab = this.app.store.get(snapshot.id);
+        if (!sameExportMetadata(snapshot, tab) || this.app.editor.getContent(snapshot.id) !== snapshot.content) continue;
+        this.app.store.update(snapshot.id, { modifiedSinceFile: false, encoding: 'UTF-8' });
+        this.app.mixedEol.delete(snapshot.id);
+        marked++;
+      }
+      this.app.scheduleStatusUpdate();
+      const skipped = snapshots.length - marked;
+      this.app.notifications.toast(`${marked} タブを書き出し済みにしました。${skipped ? `変更された ${skipped} タブの状態は更新していません。` : ''}`, skipped ? 'warning' : 'success');
+    } catch {
+      this.app.notifications.toast(downloaded
+        ? '保存確認の処理を完了できませんでした。保存状況と未書き出し表示を確認してください。'
+        : 'ZIP を作成・ダウンロードできませんでした。未書き出し状態は変更していません。', 'error', 6000);
+    } finally {
+      this.batchExportOpen = false;
+    }
   }
 
   /* ---------- バックアップ ---------- */
