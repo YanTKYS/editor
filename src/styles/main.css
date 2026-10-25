@@ -1634,3 +1634,57 @@ button.status-item:disabled {
 @media (max-width: 480px) {
   .operation-context { gap: 6px; }
 }
+
+/* 全タブ置換の確認。大量の結果もダイアログ本文内でスクロールする。 */
+.dialog-replace-preview {
+  width: min(760px, calc(100vw - 24px));
+}
+
+.replace-preview-file {
+  margin: 12px 0;
+}
+
+.replace-preview-file h3 {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.replace-preview-example {
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.replace-preview-example p {
+  margin: 0 0 4px;
+}
+
+.replace-preview-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.replace-preview-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.replace-preview-example pre {
+  margin: 4px 0;
+  padding: 6px;
+  background: var(--editor-bg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--editor-font);
+}
+
+.replace-preview-context {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 480px) {
+  .replace-preview-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -127,6 +127,45 @@ export function buildReplaceAll(
   return { changes, count: changes.length };
 }
 
+export const REPLACE_PREVIEW_FILES = 20;
+export const REPLACE_PREVIEW_MATCHES = 5;
+export const REPLACE_PREVIEW_CHARS = 200;
+
+export interface ReplacementExample {
+  line: number;
+  column: number;
+  context: string;
+  before: string;
+  after: string;
+}
+
+/** 実行時と同じ検索・置換規則で件数と確認例を作る。全件分の変更配列は保持しない。 */
+export function buildReplacePreview(
+  query: SearchQuery,
+  source: EditorState | Text | string,
+  limit = REPLACE_PREVIEW_MATCHES,
+): { count: number; examples: ReplacementExample[] } {
+  const state = toState(source);
+  const examples: ReplacementExample[] = [];
+  let count = 0;
+  const clip = (s: string) => s.length > REPLACE_PREVIEW_CHARS ? s.slice(0, REPLACE_PREVIEW_CHARS) + '…' : s;
+  for (const match of iterateMatches(query, state)) {
+    count++;
+    if (examples.length >= limit) continue;
+    const line = state.doc.lineAt(match.from);
+    const length = match.to - match.from;
+    examples.push({
+      line: line.number,
+      column: match.from - line.from + 1,
+      context: state.sliceDoc(Math.max(line.from, match.from - 30), Math.min(line.to, match.from + 60)),
+      before: state.sliceDoc(match.from, match.from + Math.min(length, REPLACE_PREVIEW_CHARS)) +
+        (length > REPLACE_PREVIEW_CHARS ? '…' : ''),
+      after: clip(replacementFor(query, match)),
+    });
+  }
+  return { count, examples };
+}
+
 /** 横断検索の結果 1 件 */
 export interface DocMatch {
   from: number;

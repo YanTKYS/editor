@@ -7,6 +7,8 @@ import {
 } from '@codemirror/search';
 import {
   buildReplaceAll,
+  buildReplacePreview,
+  REPLACE_PREVIEW_FILES,
   countMatches,
   createQuery,
   EMPTY_SEARCH,
@@ -16,7 +18,7 @@ import {
   type DocMatch,
   type SearchOptions,
 } from '../core/search';
-import { confirmDialog } from '../ui/dialogs';
+import { showReplacePreview } from '../ui/replacePreview';
 import type { FindPanelHost, TabSearchResult } from '../ui/findPanel';
 import type { App } from './app';
 
@@ -27,6 +29,8 @@ import type { App } from './app';
 export class SearchController implements FindPanelHost {
   private options: SearchOptions = { ...EMPTY_SEARCH };
   private query: SearchQuery = createQuery(EMPTY_SEARCH);
+  private replacementRevision = 0;
+  private replacementPreviewOpen = false;
   private countTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly app: App) {}
@@ -68,6 +72,7 @@ export class SearchController implements FindPanelHost {
       options.regexp !== this.options.regexp ||
       options.wholeWord !== this.options.wholeWord;
     if (changed) this.invalidateResults();
+    if (options.replace !== this.options.replace) this.replacementRevision++;
     this.options = options;
     this.query = createQuery(options);
     this.app.editor.setSearch(this.query, true);
@@ -159,38 +164,47 @@ export class SearchController implements FindPanelHost {
   }
 
   async replaceAllTabs(): Promise<void> {
-    if (!this.query.valid) return;
-    const plans: { id: string; count: number }[] = [];
-    let total = 0;
-    for (const tab of this.app.store.all) {
-      const source = this.app.editor.getSearchSource(tab.id);
-      if (source === null) continue;
-      const { count } = buildReplaceAll(this.query, source);
-      if (count) {
-        plans.push({ id: tab.id, count });
-        total += count;
+    if (!this.query.valid || this.replacementPreviewOpen) return;
+    this.replacementPreviewOpen = true;
+    try {
+      const query = this.query;
+      const revision = this.replacementRevision;
+      const plans = [];
+      let total = 0;
+      for (const [index, tab] of this.app.store.all.entries()) {
+        const source = this.app.editor.getSearchSource(tab.id);
+        if (source === null) continue;
+        const plan = buildReplacePreview(query, source, plans.length < REPLACE_PREVIEW_FILES ? undefined : 0);
+        if (plan.count) {
+          plans.push({ ...plan, id: tab.id, name: tab.name, tabNumber: index + 1 });
+          total += plan.count;
+        }
       }
+      if (!total) {
+        this.app.notifications.toast('どのタブにも一致する箇所はありません。');
+        return;
+      }
+      const staleMessage = 'プレビュー後に本文・検索条件・タブ構成が変更されました。キャンセルしてプレビューを作り直してください。';
+      const ok = await showReplacePreview(plans, total, () =>
+        revision === this.replacementRevision ? null : staleMessage);
+      if (!ok) return;
+      // モーダルの終了からこの継続処理までに発生した変更も検知する。
+      if (revision !== this.replacementRevision) {
+        this.app.notifications.toast(staleMessage, 'warning');
+        return;
+      }
+      for (const plan of plans) {
+        this.app.editor.applyToTab(plan.id, (state) => {
+          const { changes, count } = buildReplaceAll(query, state);
+          return count ? { changes, userEvent: 'input.replace.all' } : null;
+        });
+      }
+      this.app.notifications.toast(`${plans.length} 個のタブで ${total.toLocaleString()} 件を置換しました。`, 'success');
+      this.updateCount(true);
+      if (!this.app.findPanel.resultsEl.hidden) this.searchAllTabs();
+    } finally {
+      this.replacementPreviewOpen = false;
     }
-    if (!total) {
-      this.app.notifications.toast('どのタブにも一致する箇所はありません。');
-      return;
-    }
-    const ok = await confirmDialog(
-      'すべてのタブで置換',
-      `${plans.length} 個のタブで合計 ${total.toLocaleString()} 件を置換します。\n置換後も各タブで Ctrl+Z により元に戻せます。`,
-      '置換する',
-    );
-    if (!ok) return;
-    const query = this.query;
-    for (const p of plans) {
-      this.app.editor.applyToTab(p.id, (state) => {
-        const { changes, count } = buildReplaceAll(query, state);
-        return count ? { changes, userEvent: 'input.replace.all' } : null;
-      });
-    }
-    this.app.notifications.toast(`${plans.length} 個のタブで ${total.toLocaleString()} 件を置換しました。`, 'success');
-    this.updateCount(true);
-    if (!this.app.findPanel.resultsEl.hidden) this.searchAllTabs();
   }
 
   gotoResult(tabId: string, match: DocMatch): void {
@@ -219,6 +233,7 @@ export class SearchController implements FindPanelHost {
   /* ---------- 状態変化への追従 ---------- */
 
   invalidateResults(): void {
+    this.replacementRevision++;
     this.app.findPanel.markResultsStale();
   }
 
