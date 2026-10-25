@@ -243,7 +243,7 @@ Windows では、リポジトリの `scripts/serve-editor.ps1` で簡易 HTTP �
 | 文書 | 内容 |
 | --- | --- |
 | [変更履歴](CHANGELOG.md) | バージョンごとの実装済みの変更 |
-| [UI/UX 改善案と対応状況](docs/feature-ideas.md) | 公開済み・未リリースの実装と、今後の未実装候補 |
+| [UI/UX 改善案と対応状況](docs/feature-ideas.md) | 提案の対応状況と次回の検討順序 |
 
 ## 利用ライブラリ
 
