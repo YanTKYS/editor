@@ -76,7 +76,10 @@ export class FileCommands {
     }
     if (lastId) {
       this.app.activateTab(lastId, true);
-      if (replaceId && replaceId !== lastId) void this.app.closeTab(replaceId, { confirm: false });
+      // 読み込み待ちの間に入力されたタブは、空タブの自動整理から除外する。
+      if (replaceId && replaceId !== lastId && this.app.isPristine(replaceId)) {
+        void this.app.closeTab(replaceId, { confirm: false });
+      }
     }
     if (opened > 1) this.app.notifications.toast(`${opened} 個のファイルを開きました。`, 'success');
   }
@@ -158,13 +161,18 @@ export class FileCommands {
     this.exportTab(tab.id, name);
   }
 
-  /** タブを UTF-8 のファイルとしてダウンロードさせる */
-  exportTab(id: string, name: string): void {
+  /** タブを UTF-8 で書き出す。ダウンロードを開始できた場合に true（保存完了の検知ではない） */
+  exportTab(id: string, name: string): boolean {
     const tab = this.app.store.get(id);
-    if (!tab) return;
+    if (!tab) return false;
     const fileName = exportFileName(name, tab.mode);
     const content = this.app.editor.getContent(id);
-    downloadText(content, fileName, tab.eol, tab.bom, MIME_BY_MODE[tab.mode] ?? 'text/plain');
+    try {
+      downloadText(content, fileName, tab.eol, tab.bom, MIME_BY_MODE[tab.mode] ?? 'text/plain');
+    } catch {
+      this.app.notifications.toast('ファイルを書き出せませんでした。本文と未書き出し状態は保持しています。', 'error');
+      return false;
+    }
     const wasSjis = tab.encoding === 'Shift_JIS';
     this.app.store.update(id, { modifiedSinceFile: false, encoding: 'UTF-8' });
     this.app.mixedEol.delete(id);
@@ -174,6 +182,7 @@ export class FileCommands {
       'success',
       wasSjis ? 6000 : 3000,
     );
+    return true;
   }
 
   /** 通常のファイルをZIPにまとめ、保存確認後に同じ内容のタブだけ状態を更新する。 */

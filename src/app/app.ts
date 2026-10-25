@@ -649,8 +649,7 @@ export class App {
   async closeTab(id: string, options: { confirm?: boolean } = {}): Promise<boolean> {
     const tab = this.store.get(id);
     if (!tab) return false;
-    const content = this.editor.getContent(id);
-    if ((options.confirm ?? true) && content.length > 0 && tab.modifiedSinceFile) {
+    if ((options.confirm ?? true) && tab.modifiedSinceFile) {
       const answer = await showDialog<'cancel' | 'export' | 'close'>({
         title: 'タブを閉じる',
         message: `「${tab.name}」を閉じますか？\nこのタブの内容はファイルに書き出されていません。閉じるとブラウザ内の保存データからも削除されます。\n（閉じた直後であれば「ファイル」→「閉じたタブを開き直す」(Alt+Shift+T) で元に戻せます）`,
@@ -662,13 +661,13 @@ export class App {
         ],
       });
       if (answer === 'cancel') return false;
-      if (answer === 'export') this.files.exportTab(id, tab.name);
+      if (answer === 'export' && !this.files.exportTab(id, tab.name)) return false;
       if (!this.store.get(id)) return false;
     }
     if (!this.isPristine(id)) {
       this.closedTabs.push({
         meta: { ...tab },
-        content,
+        content: this.editor.getContent(id),
         index: this.store.indexOf(id),
         restore: { selection: this.editor.getSelection(id), scrollPos: this.editor.getScrollPos(id) },
       });
@@ -682,7 +681,7 @@ export class App {
 
   async closeOtherTabs(keepId: string): Promise<void> {
     const others = this.store.all.filter((t) => t.id !== keepId);
-    const unsaved = others.filter((t) => t.modifiedSinceFile && this.editor.getLength(t.id) > 0);
+    const unsaved = others.filter((t) => t.modifiedSinceFile);
     if (unsaved.length) {
       const ok = await confirmDialog(
         '他のタブをすべて閉じる',
