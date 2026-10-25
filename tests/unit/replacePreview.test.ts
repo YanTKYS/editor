@@ -1,6 +1,6 @@
 import { EditorState } from '@codemirror/state';
 import { describe, expect, it } from 'vitest';
-import { buildReplaceAll, buildReplacePreview, createQuery, EMPTY_SEARCH } from '../../src/core/search';
+import { buildReplaceAll, buildReplacePreview, getReplacementExamples, createQuery, EMPTY_SEARCH } from '../../src/core/search';
 
 describe('全タブ置換の確認例', () => {
   it('本文を変更せず、位置と変更前後を実際の正規表現置換と同じ規則で求める', () => {
@@ -27,6 +27,15 @@ describe('全タブ置換の確認例', () => {
     expect(buildReplacePreview(q, 'x'.repeat(10000))).toMatchObject({ count: 10000, examples: new Array(5).fill(expect.any(Object)) });
     expect(buildReplacePreview(q, 'xxx', 0)).toEqual({ count: 3, examples: [] });
     expect(buildReplacePreview(q, '一致なし')).toEqual({ count: 0, examples: [] });
+  });
+
+  it('ページ用の例だけを上限付きで取得し、従来のプレビューと置換規則を共有する', () => {
+    const q = createQuery({ ...EMPTY_SEARCH, search: '(id=)(\\d+)', replace: '$2\\n$1', regexp: true });
+    const doc = 'id=12\nid=34\nid=56';
+    expect(getReplacementExamples(q, doc, 2)).toEqual(buildReplacePreview(q, doc, 2).examples);
+    expect(getReplacementExamples(q, doc, 0)).toEqual([]);
+    expect(getReplacementExamples(q, '一致なし')).toEqual([]);
+    expect(getReplacementExamples(q, doc, 2)).toHaveLength(2);
   });
 
   it('長い一致と置換文字列の表示を制限し、改行を含む一致も扱う', () => {

@@ -8,7 +8,7 @@ import {
 import {
   buildReplaceAll,
   buildReplacePreview,
-  REPLACE_PREVIEW_FILES,
+  getReplacementExamples,
   countMatches,
   createQuery,
   EMPTY_SEARCH,
@@ -170,36 +170,39 @@ export class SearchController implements FindPanelHost {
       const query = this.query;
       const revision = this.replacementRevision;
       const plans = [];
-      let total = 0;
       for (const [index, tab] of this.app.store.all.entries()) {
         const source = this.app.editor.getSearchSource(tab.id);
         if (source === null) continue;
-        const plan = buildReplacePreview(query, source, plans.length < REPLACE_PREVIEW_FILES ? undefined : 0);
+        const plan = buildReplacePreview(query, source, 0);
         if (plan.count) {
-          plans.push({ ...plan, id: tab.id, name: tab.name, tabNumber: index + 1 });
-          total += plan.count;
+          plans.push({ ...plan, source, id: tab.id, name: tab.name, tabNumber: index + 1 });
         }
       }
-      if (!total) {
+      if (!plans.length) {
         this.app.notifications.toast('どのタブにも一致する箇所はありません。');
         return;
       }
       const staleMessage = 'プレビュー後に本文・検索条件・タブ構成が変更されました。キャンセルしてプレビューを作り直してください。';
-      const ok = await showReplacePreview(plans, total, () =>
-        revision === this.replacementRevision ? null : staleMessage);
-      if (!ok) return;
+      const byId = new Map(plans.map(plan => [plan.id, plan]));
+      const selectedIds = await showReplacePreview(plans,
+        id => getReplacementExamples(query, byId.get(id)!.source),
+        () => revision === this.replacementRevision ? null : staleMessage);
+      if (!selectedIds?.length) return;
       // モーダルの終了からこの継続処理までに発生した変更も検知する。
       if (revision !== this.replacementRevision) {
         this.app.notifications.toast(staleMessage, 'warning');
         return;
       }
-      for (const plan of plans) {
+      const selected = new Set(selectedIds);
+      const selectedPlans = plans.filter(plan => selected.has(plan.id));
+      const selectedTotal = selectedPlans.reduce((sum, plan) => sum + plan.count, 0);
+      for (const plan of selectedPlans) {
         this.app.editor.applyToTab(plan.id, (state) => {
           const { changes, count } = buildReplaceAll(query, state);
           return count ? { changes, userEvent: 'input.replace.all' } : null;
         });
       }
-      this.app.notifications.toast(`${plans.length} 個のタブで ${total.toLocaleString()} 件を置換しました。`, 'success');
+      this.app.notifications.toast(`${selectedPlans.length} 個のタブで ${selectedTotal.toLocaleString()} 件を置換しました。`, 'success');
       this.updateCount(true);
       if (!this.app.findPanel.resultsEl.hidden) this.searchAllTabs();
     } finally {
