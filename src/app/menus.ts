@@ -260,17 +260,17 @@ export function buildToolbar(app: App): HTMLElement {
     });
   const sep = () => h('span', { class: 'toolbar-sep', attrs: { 'aria-hidden': 'true' } });
   return h('div', { class: 'toolbar', attrs: { role: 'toolbar', 'aria-label': '主要操作' } }, [
-    button('新規', '新規タブ (Ctrl+N / Alt+N)', () => app.run('newTab')),
-    button('開く', 'ファイルを開く (Ctrl+O)', () => app.run('openFile')),
+    button('新規', '新規タブ (Ctrl+N / Alt+N)', () => app.run('newTab'), 'tb-new'),
+    button('開く', 'ファイルを開く (Ctrl+O)', () => app.run('openFile'), 'tb-open'),
     sep(),
     button('ブラウザに保存', 'ブラウザ内（localStorage）に保存 (Ctrl+S)\n※編集内容は自動保存されます', () => app.run('saveBrowser'), 'tb-save'),
     button('ファイルに書き出し', '現在のタブを PC にダウンロード (Ctrl+Shift+S)', () => app.run('exportFile'), 'tb-export'),
     sep(),
-    button('元に戻す', '元に戻す (Ctrl+Z)', () => app.runEditorCommand(undo)),
-    button('やり直し', 'やり直し (Ctrl+Y)', () => app.runEditorCommand(redo)),
+    button('元に戻す', '元に戻す (Ctrl+Z)', () => app.runEditorCommand(undo), 'tb-undo'),
+    button('やり直し', 'やり直し (Ctrl+Y)', () => app.runEditorCommand(redo), 'tb-redo'),
     sep(),
-    button('検索', '検索 (Ctrl+F)', () => app.run('find')),
-    button('置換', '置換 (Ctrl+H)', () => app.run('replace')),
+    button('検索', '検索 (Ctrl+F)', () => app.run('find'), 'tb-find'),
+    button('置換', '置換 (Ctrl+H)', () => app.run('replace'), 'tb-replace'),
     sep(),
     sep(),
     h(
