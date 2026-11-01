@@ -1584,11 +1584,21 @@ button.status-item:disabled {
 
 @media (max-width: 480px) {
   .menubar-item {
-    padding: 2px 6px;
+    padding: 4px 7px;
   }
 
-  .toolbar {
+  /* 主要操作（開く・書き出し・検索）はツールバーに残し、副次的な操作は
+     メニューとショートカットに委ねて、狭幅でも主要操作へ到達できるようにする */
+  .toolbar .tb-undo,
+  .toolbar .tb-redo,
+  .toolbar .split-toggle,
+  .toolbar-sep {
     display: none;
+  }
+
+  .toolbar-button {
+    padding: 4px 5px;
+    font-size: 12px;
   }
 
   .status-sel,
@@ -1598,6 +1608,47 @@ button.status-item:disabled {
 
   .find-count {
     min-width: 0;
+  }
+
+  /* 小さい操作対象は、字形を大きく変えずにタップ／クリック領域を確保する */
+  .tab-close {
+    width: 26px;
+    height: 26px;
+  }
+
+  .tab-action {
+    width: 36px;
+  }
+
+  .pane-header {
+    height: 28px;
+  }
+
+  .pane-pick {
+    width: 30px;
+    height: 26px;
+  }
+
+  .find-expand,
+  .find-close {
+    width: 28px;
+    height: 28px;
+  }
+
+  .find-toggle {
+    min-width: 32px;
+    height: 28px;
+  }
+}
+
+/* さらに狭い画面では置換とブラウザに保存もメニューに委ね、
+   主要操作が横スクロールなしで画面内に収まるようにする
+   （320px幅でも「開く・書き出し・検索」が直接押せることを優先する。
+   ブラウザに保存は自動保存があり、ファイルメニューからも実行できる） */
+@media (max-width: 400px) {
+  .toolbar .tb-replace,
+  .toolbar .tb-save {
+    display: none;
   }
 }
 
