@@ -13,6 +13,13 @@ for (const width of [375, 480]) {
     await page.setViewportSize({ width, height: 700 });
     await openApp(page);
     await expect(toolbar(page)).toBeVisible();
+    // ツールバー内部で横スクロールが発生していないこと
+    // （ツールバーは overflow-x:auto のため、画面全体の検査だけでは検出できない）
+    const bar = toolbar(page);
+    const barOverflow = await bar.evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(barOverflow).toBeLessThanOrEqual(0);
+    const barBox = await bar.boundingBox();
+    expect(barBox).not.toBeNull();
     // 書き出しボタンは ::before の字形がアクセシブルネームに含まれるため正規表現で探す
     for (const name of ['開く', /ファイルに書き出し/, '検索'] as const) {
       const btn = toolbarButton(page, name);
@@ -21,16 +28,22 @@ for (const width of [375, 480]) {
       expect(box).not.toBeNull();
       expect(box!.x).toBeGreaterThanOrEqual(0);
       expect(box!.x + box!.width).toBeLessThanOrEqual(width + 1);
+      // ツールバー自身の可視領域にも完全に入っている
+      expect(box!.x).toBeGreaterThanOrEqual(barBox!.x - 1);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(barBox!.x + barBox!.width + 1);
     }
     // 副次的な操作は狭幅のツールバーには出さない（編集メニュー・ショートカットで代替できる）
     await expect(toolbarButton(page, '元に戻す')).toBeHidden();
     await expect(toolbarButton(page, 'やり直し')).toBeHidden();
     await expect(page.locator('.split-toggle')).toBeHidden();
-    // 置換は 480px では表示し、375px では検索メニューに委ねる
+    // 置換とブラウザに保存は 480px では表示し、375px ではメニューに委ねる
+    // （ブラウザに保存は自動保存でも代替できる）
     if (width === 375) {
       await expect(toolbarButton(page, '置換')).toBeHidden();
+      await expect(toolbarButton(page, 'ブラウザに保存')).toBeHidden();
     } else {
       await expect(toolbarButton(page, '置換')).toBeVisible();
+      await expect(toolbarButton(page, 'ブラウザに保存')).toBeVisible();
     }
     // 画面全体の横スクロールは生じない
     const overflow = await page.evaluate(
@@ -63,6 +76,80 @@ test('幅375pxで主要操作をツールバーから実行できる', async ({ 
   const download = await downloadPromise;
   const bytes = await readFile(await download.path());
   expect(bytes.toString('utf-8')).toBe('狭幅テスト');
+});
+
+test('幅320pxでも主要操作がツールバー内に収まり、実行できる', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await openApp(page);
+
+  // 置換とブラウザに保存はメニューに委ね、主要3操作を直接押せるようにする
+  await expect(toolbarButton(page, '置換')).toBeHidden();
+  await expect(toolbarButton(page, 'ブラウザに保存')).toBeHidden();
+
+  // ツールバー内部の横スクロールがなく、3操作がツールバーの可視領域に完全に入る
+  const bar = toolbar(page);
+  const barOverflow = await bar.evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(barOverflow).toBeLessThanOrEqual(0);
+  const barBox = await bar.boundingBox();
+  expect(barBox).not.toBeNull();
+  for (const name of ['開く', /ファイルに書き出し/, '検索'] as const) {
+    const btn = toolbarButton(page, name);
+    await expect(btn).toBeVisible();
+    const box = await btn.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(barBox!.x - 1);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(barBox!.x + barBox!.width + 1);
+  }
+
+  // 検索: パネルが開き、入力欄にフォーカスする
+  await toolbarButton(page, '検索').click();
+  await expect(page.locator('.find-panel')).toBeVisible();
+  await expect(page.getByRole('textbox', { name: '検索する文字列' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.find-panel')).toBeHidden();
+
+  // 開く: ファイル選択ダイアログが開く
+  const chooser = page.waitForEvent('filechooser');
+  await toolbarButton(page, '開く').click();
+  await chooser;
+
+  // 書き出し: 入力した内容がダウンロードされる
+  await typeInEditor(page, '320px幅テスト');
+  const downloadPromise = page.waitForEvent('download');
+  await toolbarButton(page, /ファイルに書き出し/).click();
+  const download = await downloadPromise;
+  const bytes = await readFile(await download.path());
+  expect(bytes.toString('utf-8')).toBe('320px幅テスト');
+});
+
+test('狭幅でもキーボードで主要操作に到達でき、フォーカスが制御される', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 700 });
+  await openApp(page);
+
+  // Ctrl+F で検索パネルが開き、入力欄にフォーカスする
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('Control+f');
+  await expect(page.locator('.find-panel')).toBeVisible();
+  await expect(page.getByRole('textbox', { name: '検索する文字列' })).toBeFocused();
+
+  // Tab でパネル内のコントロールへ移動し、フォーカスがパネル内に留まる
+  await page.keyboard.press('Tab');
+  const focusInPanel = await page.evaluate(
+    () => document.querySelector('.find-panel')?.contains(document.activeElement) ?? false,
+  );
+  expect(focusInPanel).toBe(true);
+
+  // Esc で閉じるとエディタへフォーカスが戻る
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.find-panel')).toBeHidden();
+  await expect(page.locator('.cm-content')).toBeFocused();
+
+  // ツールバーのボタンはフォーカスを取得でき、Enter でも実行できる
+  const findButton = toolbarButton(page, '検索');
+  await findButton.focus();
+  await expect(findButton).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.find-panel')).toBeVisible();
 });
 
 test('幅480pxで小さい操作対象のタップ／クリック領域が確保される', async ({ page }) => {
