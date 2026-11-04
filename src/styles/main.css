@@ -6,31 +6,49 @@
   --editor-font: Consolas, 'BIZ UDGothic', 'MS Gothic', 'Osaka-Mono', 'Noto Sans Mono CJK JP', ui-monospace, monospace;
   --editor-font-size: 14px;
   --ui-font-size: 13px;
-  --radius: 3px;
+  /* Fluent 2 を参考にした外側の操作UI用の形状・影（編集領域 .cm-* には使わない） */
+  --radius: 4px;
+  --radius-lg: 8px;
+  --shadow-8: 0 0 2px rgb(0 0 0 / 0.12), 0 4px 8px rgb(0 0 0 / 0.14);
+  --shadow-16: 0 0 2px rgb(0 0 0 / 0.12), 0 8px 16px rgb(0 0 0 / 0.14);
+  --shadow-28: 0 0 8px rgb(0 0 0 / 0.12), 0 14px 28px rgb(0 0 0 / 0.24);
+  --overlay: rgb(0 0 0 / 0.4);
 
-  --bg: #f3f3f3;
-  --fg: #1e1e1e;
-  --fg-muted: #5f6368;
-  --border: #c8c8c8;
-  --border-strong: #a6a6a6;
+  /* 面: --bg（タブ列・非アクティブ見出し）/ --panel-bg（メニュー・ツールバー・ステータス）/ --surface（メニュー・ダイアログ・通知） */
+  --bg: #f0f0f0;
   --panel-bg: #fafafa;
-  --hover: #e2e6ea;
-  --active: #d4dbe3;
-  --accent: #2f5f8f;
+  --surface: #ffffff;
+  --control-bg: #ffffff;
+  --fg: #242424;
+  --fg-muted: #616161;
+  --border: #dcdcdc;
+  --border-strong: #c4c4c4;
+  /* 操作状態: hover / pressed・選択中 */
+  --hover: #ebebeb;
+  --active: #e0e0e0;
+  --tab-hover: #f5f5f5;
+  /* ブランド色: --accent は塗り（白文字）、--brand-fg は文字・標識・枠 */
+  --accent: #0f6cbd;
+  --accent-hover: #115ea3;
+  --accent-pressed: #0c3b5e;
   --accent-fg: #ffffff;
-  --focus: #1a73e8;
-  --danger: #b3261e;
+  --brand-fg: #0f6cbd;
+  --accent-soft: rgb(15 108 189 / 0.12);
+  --focus: #0f6cbd;
+  --danger: #b10e1c;
+  --danger-solid: #b10e1c;
+  --danger-solid-hover: #960b18;
   --warning-bg: #fff4ce;
   --warning-border: #e0c35a;
   --error-bg: #fde7e9;
   --error-border: #e3a1a7;
-  --info-bg: #e8f1fb;
-  --info-border: #a9c7ea;
-  --success: #1e7b34;
+  --info-bg: #ebf3fc;
+  --info-border: #b4d6fa;
+  --success: #107c10;
 
-  --tab-bg: #e4e4e4;
+  --tab-bg: #e6e6e6;
   --tab-active-bg: #ffffff;
-  --tab-active-border: #2f5f8f;
+  --tab-active-border: #0f6cbd;
 
   --editor-bg: #ffffff;
   --editor-fg: #1e1e1e;
@@ -64,18 +82,31 @@
 }
 
 :root[data-theme='dark'] {
-  --bg: #2b2d31;
-  --fg: #e3e3e3;
-  --fg-muted: #a0a4ab;
-  --border: #45484f;
-  --border-strong: #5c6069;
-  --panel-bg: #25272b;
-  --hover: #3a3d44;
-  --active: #464a52;
-  --accent: #5b8ec2;
+  --bg: #292929;
+  --panel-bg: #242424;
+  --surface: #2f2f2f;
+  --control-bg: #333333;
+  --fg: #e6e6e6;
+  --fg-muted: #ababab;
+  --border: #404040;
+  --border-strong: #5a5a5a;
+  --hover: #404040;
+  --active: #4a4a4a;
+  --tab-hover: #383838;
+  --accent: #115ea3;
+  --accent-hover: #0f6cbd;
+  --accent-pressed: #0c3b5e;
   --accent-fg: #ffffff;
-  --focus: #6ea8fe;
+  --brand-fg: #479ef5;
+  --accent-soft: rgb(71 158 245 / 0.16);
+  --focus: #6cb8ff;
   --danger: #f2827a;
+  --danger-solid: #c50f1f;
+  --danger-solid-hover: #d13438;
+  --shadow-8: 0 0 2px rgb(0 0 0 / 0.24), 0 4px 8px rgb(0 0 0 / 0.28);
+  --shadow-16: 0 0 2px rgb(0 0 0 / 0.24), 0 8px 16px rgb(0 0 0 / 0.28);
+  --shadow-28: 0 0 8px rgb(0 0 0 / 0.2), 0 14px 28px rgb(0 0 0 / 0.48);
+  --overlay: rgb(0 0 0 / 0.55);
   --warning-bg: #4a3f1c;
   --warning-border: #8a7430;
   --error-bg: #4d2427;
@@ -84,9 +115,9 @@
   --info-border: #3d5f82;
   --success: #6cc483;
 
-  --tab-bg: #313338;
+  --tab-bg: #313131;
   --tab-active-bg: #1e1f22;
-  --tab-active-border: #5b8ec2;
+  --tab-active-border: #479ef5;
 
   --editor-bg: #1e1f22;
   --editor-fg: #d4d4d4;
@@ -157,6 +188,14 @@ select {
   outline-offset: -2px;
 }
 
+/* ブランド色で塗られた操作（選択中・主ボタン）では枠色が背景に埋もれないよう、内側に白い輪郭を出す */
+.btn-primary:focus-visible,
+.split-button[aria-pressed='true']:focus-visible,
+.find-toggle[aria-pressed='true']:focus-visible {
+  outline-color: var(--accent-fg);
+  outline-offset: -3px;
+}
+
 .app {
   display: flex;
   flex-direction: column;
@@ -189,10 +228,13 @@ select {
   cursor: default;
 }
 
-.menubar-item:hover,
-.menubar-item.open {
+.menubar-item:hover {
   background: var(--hover);
-  border-color: var(--border);
+}
+
+.menubar-item:active,
+.menubar-item.open {
+  background: var(--active);
 }
 
 .toolbar {
@@ -216,11 +258,16 @@ select {
 
 .toolbar-button:hover {
   background: var(--hover);
-  border-color: var(--border);
 }
 
 .toolbar-button:active {
   background: var(--active);
+}
+
+.toolbar-button:disabled {
+  color: var(--fg-muted);
+  opacity: 0.6;
+  background: none;
 }
 
 .toolbar-button.tb-save::before {
@@ -230,14 +277,14 @@ select {
   height: 8px;
   margin-right: 5px;
   border-radius: 1px;
-  background: var(--accent);
+  background: var(--brand-fg);
   vertical-align: 0;
 }
 
 .toolbar-button.tb-export::before {
   content: '⭳';
   margin-right: 4px;
-  color: var(--accent);
+  color: var(--brand-fg);
 }
 
 .toolbar-sep {
@@ -258,10 +305,11 @@ select {
   max-width: min(420px, 100vw);
   max-height: calc(100vh - 8px);
   overflow-y: auto;
-  background: var(--panel-bg);
-  border: 1px solid var(--border-strong);
-  box-shadow: 0 3px 10px rgb(0 0 0 / 0.18);
-  padding: 3px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-16);
+  padding: 4px;
 }
 
 .popup-menu:focus {
@@ -273,25 +321,40 @@ select {
   grid-template-columns: 18px 1fr auto;
   align-items: center;
   gap: 4px;
-  padding: 3px 12px 3px 6px;
+  padding: 3px 10px 3px 6px;
+  border-radius: var(--radius);
   cursor: default;
   white-space: nowrap;
 }
 
+/* ポインタの移動でもフォーカスが移るため、hover と同じ背景にし、
+   キーボード操作時（:focus-visible）だけ枠を重ねて現在位置を示す */
 .menu-item:focus,
 .menu-item:hover {
   background: var(--hover);
   outline: none;
 }
 
-.menu-item.disabled {
+.menu-item:active {
+  background: var(--active);
+}
+
+.menu-item:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.menu-item.disabled,
+.menu-item.disabled:hover,
+.menu-item.disabled:focus {
   color: var(--fg-muted);
+  background: none;
   opacity: 0.6;
 }
 
 .menu-check {
   text-align: center;
-  color: var(--accent);
+  color: var(--brand-fg);
 }
 
 .menu-shortcut {
@@ -303,11 +366,11 @@ select {
 .menu-separator {
   height: 1px;
   background: var(--border);
-  margin: 3px 0;
+  margin: 4px -4px;
 }
 
 .menu-heading {
-  padding: 4px 12px 2px 28px;
+  padding: 4px 10px 2px 28px;
   font-size: 11px;
   color: var(--fg-muted);
 }
@@ -343,7 +406,7 @@ select {
   padding: 3px 3px 3px 8px;
   margin-right: 1px;
   background: var(--tab-bg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-bottom: none;
   border-radius: var(--radius) var(--radius) 0 0;
   cursor: default;
@@ -353,7 +416,11 @@ select {
 }
 
 .tab:hover {
-  background: var(--hover);
+  background: var(--tab-hover);
+}
+
+.tab:not(.active):active {
+  background: var(--active);
 }
 
 .tab.active {
@@ -374,7 +441,7 @@ select {
   top: 2px;
   bottom: 2px;
   width: 2px;
-  background: var(--accent);
+  background: var(--brand-fg);
 }
 
 .tab.drop-before::before {
@@ -393,7 +460,7 @@ select {
 }
 
 .tab-dirty {
-  color: var(--accent);
+  color: var(--brand-fg);
   font-size: 10px;
   width: 8px;
   flex: none;
@@ -438,6 +505,10 @@ select {
   color: var(--fg);
 }
 
+.tab-close:active {
+  background: var(--border-strong);
+}
+
 .tab-action {
   border: none;
   border-left: 1px solid var(--border);
@@ -450,6 +521,10 @@ select {
 .tab-action:hover {
   background: var(--hover);
   color: var(--fg);
+}
+
+.tab-action:active {
+  background: var(--active);
 }
 
 /* ==========================================================================
@@ -507,10 +582,11 @@ select {
 }
 
 .toast {
-  background: var(--panel-bg);
-  border: 1px solid var(--border-strong);
-  border-left: 4px solid var(--accent);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--brand-fg);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-8);
   padding: 6px 10px;
   max-width: 480px;
   transition: opacity 0.3s;
@@ -642,6 +718,10 @@ select {
   color: var(--fg);
 }
 
+.pane-pick:active {
+  background: var(--active);
+}
+
 .pane-body {
   flex: 1;
   min-height: 0;
@@ -688,8 +768,8 @@ select {
   content: '';
   position: absolute;
   inset: 0;
-  border: 2px dashed var(--accent);
-  background: rgb(47 95 143 / 0.08);
+  border: 2px dashed var(--brand-fg);
+  background: var(--accent-soft);
   pointer-events: none;
 }
 
@@ -720,7 +800,7 @@ select {
 
 .diff-label {
   font-weight: 600;
-  color: var(--accent);
+  color: var(--brand-fg);
 }
 
 .diff-names {
@@ -747,14 +827,18 @@ select {
 .diff-button {
   height: 22px;
   padding: 0 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  background: var(--editor-bg);
+  background: var(--control-bg);
   cursor: default;
 }
 
 .diff-button:hover:not(:disabled) {
   background: var(--hover);
+}
+
+.diff-button:active:not(:disabled) {
+  background: var(--active);
 }
 
 .diff-button:disabled {
@@ -907,14 +991,14 @@ select {
 
 .diff-preview-role {
   min-height: 15px;
-  color: var(--accent);
+  color: var(--brand-fg);
   font-size: 11px;
 }
 
 .diff-preview-pane.role-a,
 .diff-preview-pane.role-b {
-  border-color: var(--accent);
-  box-shadow: inset 0 2px 0 var(--accent);
+  border-color: var(--brand-fg);
+  box-shadow: inset 0 2px 0 var(--brand-fg);
 }
 
 .diff-preview-pane.role-result {
@@ -994,8 +1078,8 @@ select {
   min-width: 24px;
   height: 22px;
   padding: 0 4px;
-  border: 1px solid var(--border);
-  background: var(--editor-bg);
+  border: 1px solid var(--border-strong);
+  background: var(--control-bg);
   cursor: default;
 }
 
@@ -1009,6 +1093,14 @@ select {
 
 .split-button:hover {
   background: var(--hover);
+}
+
+.split-button:active {
+  background: var(--active);
+}
+
+.split-button[aria-pressed='true']:hover {
+  background: var(--accent-hover);
 }
 
 .split-button[aria-pressed='true'] {
@@ -1028,7 +1120,7 @@ select {
 
 .splitter:hover,
 .splitter:focus-visible {
-  background: var(--accent);
+  background: var(--brand-fg);
 }
 
 .md-preview {
@@ -1064,11 +1156,23 @@ select {
   min-width: 28px;
   height: 24px;
   padding: 0 4px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  background: var(--editor-bg);
+  background: var(--control-bg);
   font-family: var(--editor-font);
   font-size: 12px;
+}
+
+.find-toggle:hover {
+  background: var(--hover);
+}
+
+.find-toggle:active {
+  background: var(--active);
+}
+
+.find-toggle[aria-pressed='true']:hover {
+  background: var(--accent-hover);
 }
 
 .find-toggle[aria-pressed='true'] {
@@ -1092,6 +1196,11 @@ select {
 .find-close:hover {
   background: var(--hover);
   color: var(--fg);
+}
+
+.find-expand:active,
+.find-close:active {
+  background: var(--active);
 }
 
 .find-indent {
@@ -1191,6 +1300,10 @@ select {
   background: var(--hover);
 }
 
+.result-item:active {
+  background: var(--active);
+}
+
 .result-line {
   color: var(--fg-muted);
   min-width: 48px;
@@ -1276,7 +1389,7 @@ select {
 }
 
 .md-preview-content a {
-  color: var(--accent);
+  color: var(--brand-fg);
 }
 
 /* ==========================================================================
@@ -1306,6 +1419,10 @@ select {
 
 button.status-item:not(:disabled):hover {
   background: var(--hover);
+}
+
+button.status-item:not(:disabled):active {
+  background: var(--active);
 }
 
 button.status-item:disabled {
@@ -1360,18 +1477,18 @@ button.status-item:disabled {
    ダイアログ・フォーム部品
    ========================================================================== */
 .dialog {
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   padding: 0;
-  background: var(--panel-bg);
+  background: var(--surface);
   color: var(--fg);
   width: min(520px, calc(100vw - 24px));
   max-height: calc(100vh - 24px);
-  box-shadow: 0 8px 28px rgb(0 0 0 / 0.3);
+  box-shadow: var(--shadow-28);
 }
 
 .dialog::backdrop {
-  background: rgb(0 0 0 / 0.3);
+  background: var(--overlay);
 }
 
 .dialog form {
@@ -1381,16 +1498,17 @@ button.status-item:disabled {
 }
 
 .dialog-title {
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
   margin: 0;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
+  padding: 12px 16px 6px;
+  background: var(--surface);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
 .dialog-message,
 .dialog-body {
-  padding: 10px 14px 4px;
+  padding: 6px 16px 4px;
   overflow: auto;
 }
 
@@ -1401,7 +1519,7 @@ button.status-item:disabled {
 
 .dialog-error {
   color: var(--danger);
-  margin: 4px 14px 0;
+  margin: 4px 16px 0;
 }
 
 .dialog-warning {
@@ -1425,8 +1543,8 @@ button.status-item:disabled {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 12px 16px;
 }
 
 .field {
@@ -1443,14 +1561,20 @@ button.status-item:disabled {
   height: 26px;
   padding: 2px 6px;
   border: 1px solid var(--border-strong);
+  border-bottom-color: var(--fg-muted);
   border-radius: var(--radius);
   background: var(--editor-bg);
   color: var(--editor-fg);
 }
 
+.input:hover:not(:focus) {
+  border-color: var(--fg-muted);
+}
+
 .input:focus {
-  outline: 2px solid var(--focus);
+  outline: 1px solid var(--focus);
   outline-offset: -1px;
+  border-bottom: 2px solid var(--brand-fg);
 }
 
 .input[aria-invalid='true'] {
@@ -1462,29 +1586,38 @@ button.status-item:disabled {
   padding: 0 14px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  background: var(--editor-bg);
+  background: var(--control-bg);
+  font-weight: 600;
   cursor: default;
   white-space: nowrap;
 }
 
-.btn:hover {
+.btn:hover:not(:disabled) {
   background: var(--hover);
+}
+
+.btn:active:not(:disabled) {
+  background: var(--active);
 }
 
 .btn-small {
   height: 24px;
   padding: 0 8px;
+  font-weight: normal;
 }
 
 .btn-primary {
   background: var(--accent);
-  border-color: var(--accent);
+  border-color: transparent;
   color: var(--accent-fg);
 }
 
-.btn-primary:hover {
-  background: var(--accent);
-  filter: brightness(1.1);
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-primary:active:not(:disabled) {
+  background: var(--accent-pressed);
 }
 
 .btn-danger {
@@ -1493,13 +1626,20 @@ button.status-item:disabled {
 }
 
 .btn-primary.btn-danger {
-  background: var(--danger);
+  background: var(--danger-solid);
+  border-color: transparent;
   color: #fff;
+}
+
+.btn-primary.btn-danger:hover:not(:disabled),
+.btn-primary.btn-danger:active:not(:disabled) {
+  background: var(--danger-solid-hover);
 }
 
 .btn-plain {
   border-color: transparent;
   background: none;
+  font-weight: normal;
 }
 
 .info-table {
@@ -1531,8 +1671,8 @@ button.status-item:disabled {
   position: fixed;
   inset: 0;
   z-index: 950;
-  background: rgb(47 95 143 / 0.15);
-  border: 3px dashed var(--accent);
+  background: var(--accent-soft);
+  border: 3px dashed var(--brand-fg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1540,8 +1680,10 @@ button.status-item:disabled {
 }
 
 .drop-message {
-  background: var(--panel-bg);
-  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-16);
   padding: 12px 24px;
   font-size: 15px;
 }
@@ -1749,7 +1891,7 @@ button.status-item:disabled {
   align-items: center;
   gap: 6px;
   padding: 6px 0;
-  background: var(--panel-bg);
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
 
@@ -1766,7 +1908,7 @@ button.status-item:disabled {
 
 .replace-preview-file input[type='checkbox'] {
   flex: none;
-  accent-color: var(--accent);
+  accent-color: var(--brand-fg);
 }
 
 .dialog-batch-export {
@@ -1780,7 +1922,7 @@ button.status-item:disabled {
   align-items: center;
   gap: 6px;
   padding: 6px 0;
-  background: var(--panel-bg);
+  background: var(--surface);
 }
 .batch-export-controls button:disabled {
   opacity: 0.5;
@@ -1795,7 +1937,7 @@ button.status-item:disabled {
 }
 .batch-export-row input {
   flex: none;
-  accent-color: var(--accent);
+  accent-color: var(--brand-fg);
 }
 .batch-export-row span {
   min-width: 0;
