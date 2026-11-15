@@ -40,6 +40,8 @@ tests/
 保存処理は `StorageBackend` インターフェース（[src/storage/backend.ts](../src/storage/backend.ts)）で抽象化しており、IndexedDB 等の実装へ差し替えられます。
 保存データにはスキーマバージョンを持たせており、形式を変更する場合は [src/storage/schema.ts](../src/storage/schema.ts) の `SCHEMA_VERSION` と `migrate` を更新します（v0.2.0 でスキーマ v2 に更新し、v1 のデータは読み込み時に自動で移行します）。
 
+画面の見た目や操作部品を変更する場合は、先に [デザイン方針](../DESIGN.md) を確認してください。色・寸法の正本は [src/styles/main.css](../src/styles/main.css) のトークンです。
+
 差分比較は、差分の計算と統一差分形式への整形（[src/core/diff.ts](../src/core/diff.ts)）、比較元・比較先の強調表示を各タブの EditorState に持たせる拡張（[src/editor/diffMarks.ts](../src/editor/diffMarks.ts)）、結果表示の読み取り専用ビューの拡張（[src/editor/diffResult.ts](../src/editor/diffResult.ts)）、比較の進行とペイン配置の復元（[src/app/diffController.ts](../src/app/diffController.ts)）に分かれています。結果表示は `EditorManager` の一時的なビュー（タブではない読み取り専用の EditorState）として表示し、ペインのタブの本文・Undo 履歴は退避して、終了後にそのまま復元します。
 
 画面分割は、どのペインにどのタブを表示するかを `PaneLayout`（[src/core/paneLayout.ts](../src/core/paneLayout.ts)）が、ペインごとの CodeMirror の表示を `EditorManager`（[src/editor/editorManager.ts](../src/editor/editorManager.ts)）が担当します。タブの一覧・順序は従来どおり `TabStore` が管理します。
