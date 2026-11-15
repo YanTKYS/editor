@@ -1547,6 +1547,19 @@ button.status-item:disabled {
   padding: 12px 16px;
 }
 
+/* ダイアログを開くと既定のボタンにフォーカスが入り、Enter で実行される。
+   タブのクリック直後に Alt+W で開いた場合など、開き方によっては :focus-visible に
+   ならず枠が出ないため、ダイアログ下部のボタンはフォーカスがあれば常に枠を示す */
+.dialog-buttons .btn:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.dialog-buttons .btn-primary:focus {
+  outline-color: var(--accent-fg);
+  outline-offset: -3px;
+}
+
 .field {
   display: flex;
   flex-direction: column;
