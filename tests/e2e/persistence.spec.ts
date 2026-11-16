@@ -189,3 +189,70 @@ test('タブを閉じて編集した後の保存が失敗しても、再読み�
   await page.keyboard.press('Alt+PageUp');
   expect(await editorText(page)).toBe('タブAの保存済み本文');
 });
+
+test('初回の空タブを編集せずに保存しても、再読み込みで本文の欠落を警告しない', async ({ page }) => {
+  await openApp(page);
+  // 起動時の「新規 1」には触れず、2 つ目のタブだけ編集する
+  await page.keyboard.press('Alt+n');
+  await page.keyboard.type('二つ目');
+  await saveNow(page);
+
+  await page.reload();
+  await expect(page.locator('html[data-ready="true"]')).toBeAttached();
+  await expect(page.locator('.tab .tab-label')).toHaveText(['新規 1', '新規 2']);
+  expect(await editorText(page)).toBe('二つ目');
+  await expect(page.locator('.banner[data-banner="missing"]')).toHaveCount(0);
+});
+
+test('本文が欠けたタブは一度知らせ、次の保存後は同じ警告を繰り返さない', async ({ page }) => {
+  await openApp(page);
+  await typeInEditor(page, 'A');
+  await page.keyboard.press('Alt+n');
+  await page.keyboard.type('B');
+  await saveNow(page);
+  // 1 つ目のタブの本文だけが保存データから欠けた状態にする
+  await page.evaluate(() => {
+    const meta = JSON.parse(localStorage.getItem('webTextEditor:meta') ?? '{}') as { tabs: { id: string }[] };
+    localStorage.removeItem(`webTextEditor:tab:${meta.tabs[0].id}`);
+  });
+
+  await page.reload();
+  await expect(page.locator('.banner[data-banner="missing"]')).toContainText('1 個のタブの本文');
+  await typeInEditor(page, 'C');
+  await saveNow(page);
+
+  await page.reload();
+  await expect(page.locator('html[data-ready="true"]')).toBeAttached();
+  await expect(page.locator('.tab .tab-label')).toHaveText(['新規 1', '新規 2']);
+  await expect(page.locator('.banner[data-banner="missing"]')).toHaveCount(0);
+});
+
+test('競合中の「読み込み直す」は確認後にそのまま再読み込みし、保存を止めた画面を残さない', async ({ page, context }) => {
+  await openApp(page);
+  await typeInEditor(page, 'A');
+  await saveNow(page);
+  const other = await context.newPage();
+  await other.goto('./');
+  await expect(other.locator('html[data-ready="true"]')).toBeAttached();
+  await typeInEditor(other, 'B');
+  await saveNow(other);
+
+  await expect(page.locator('.banner[data-banner="storage"]')).toContainText('別のブラウザタブ');
+  await typeInEditor(page, 'C'); // 競合中の、保存されない編集
+  // ブラウザの離脱確認が出た場合は「留まる」を選ぶ（出ないことを確認する）
+  let prompts = 0;
+  page.on('dialog', (d) => {
+    prompts++;
+    void d.dismiss();
+  });
+  await page.getByRole('button', { name: '保存データを読み込み直す' }).click();
+  const reloaded = page.waitForEvent('load', { timeout: 10_000 });
+  await page.getByRole('dialog').getByRole('button', { name: '読み込み直す' }).click();
+  await reloaded;
+
+  await expect(page.locator('html[data-ready="true"]')).toBeAttached();
+  expect(prompts).toBe(0);
+  expect(await editorText(page)).toBe('AB');
+  await expect(page.locator('.status-save')).toHaveText('自動保存済み');
+  await other.close();
+});
