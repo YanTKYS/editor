@@ -228,6 +228,8 @@ export class App {
       this.store.reset(metas, result.meta.activeTabId);
       if (this.store.count === 0) this.newTab({ focus: false });
       this.persistence.start(result.meta.revision, result.meta.savedAt);
+      // 本文が欠けていたタブは空のタブとして復元したので、次の保存で本文も書き込み、同じ警告を繰り返さない
+      for (const id of result.missing) this.persistence.markTabUnwritten(id);
       if (result.missing.length) {
         this.notifications.banner(
           'missing',
@@ -362,6 +364,9 @@ export class App {
       if (document.visibilityState === 'hidden') flushNow();
     });
     window.addEventListener('beforeunload', (e) => {
+      // 保存データの読み込み直し・消去による再読み込みは利用者が確認済みのため、重ねて警告しない。
+      // ここで離脱を取り消されると、保存を止めたままの画面が残ってしまう
+      if (this.persistence.isSuspended) return;
       flushNow();
       // 保存に失敗した・保存を停止している（競合等）・書き込み完了待ちの変更があれば警告する
       if (this.persistence.hasUnsavedChanges || this.persistence.status.kind === 'error') {

@@ -47,6 +47,11 @@ export class PersistenceController {
   readonly events = new Emitter<PersistenceEvents>();
   private dirtyTabs = new Set<string>();
   private removedTabs = new Set<string>();
+  /**
+   * 保存データに本文がまだないタブ（初回起動時に作成した空タブなど）。
+   * これだけでは保存を起こさず、次に書き込むときに本文を含める。
+   */
+  private unwrittenTabs = new Set<string>();
   private metaDirty = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private firstDirtyAt: number | null = null;
@@ -98,10 +103,12 @@ export class PersistenceController {
   /**
    * 読み込み済みの revision を基準として、他タブの変更監視を開始する。
    * 読み込み処理中に記録された変更フラグは破棄する（読み込んだだけで書き込まないため）。
+   * ただし、読み込み中に作成されたタブは保存データに本文がないため、次の書き込みに含める。
    */
   start(revision: number, savedAt: number | null = null): void {
     this.revision = revision;
     this.clearTimer();
+    for (const id of this.dirtyTabs) this.unwrittenTabs.add(id);
     this.dirtyTabs.clear();
     this.removedTabs.clear();
     this.metaDirty = false;
@@ -118,6 +125,11 @@ export class PersistenceController {
   /** 保存データの破損等により、利用者が判断するまで書き込みを止める */
   block(message: string): void {
     this.setStatus({ kind: 'blocked', message });
+  }
+
+  /** suspend() により保存を止めているか */
+  get isSuspended(): boolean {
+    return this.suspended;
   }
 
   /** ページ再読み込み前などに、以後の保存をすべて止める */
@@ -138,8 +150,14 @@ export class PersistenceController {
     this.schedule();
   }
 
+  /** 保存データに本文がないタブを、次の書き込みに含める（これだけでは保存を起こさない） */
+  markTabUnwritten(id: string): void {
+    this.unwrittenTabs.add(id);
+  }
+
   markTabRemoved(id: string): void {
     this.dirtyTabs.delete(id);
+    this.unwrittenTabs.delete(id);
     this.removedTabs.add(id);
     this.metaDirty = true;
     this.schedule();
@@ -203,7 +221,7 @@ export class PersistenceController {
     if (!this.hasPendingChanges && !options.force) {
       return Promise.resolve(true);
     }
-    const dirty = [...this.dirtyTabs];
+    const dirty = [...new Set([...this.dirtyTabs, ...this.unwrittenTabs])];
     const removed = [...this.removedTabs];
     const meta = this.provider.buildMeta();
     const liveIds = new Set(meta.tabs.map((t) => t.id));
@@ -217,6 +235,7 @@ export class PersistenceController {
     };
     // 書き込み中に発生した変更を失わないよう、先に dirty をクリアしておき、失敗時に戻す
     this.dirtyTabs.clear();
+    this.unwrittenTabs.clear();
     this.removedTabs.clear();
     this.metaDirty = false;
     this.firstDirtyAt = null;
