@@ -32,3 +32,9 @@ ZIP 一括書き出しと「書き出してから閉じる」は、保存でき�
 | [配備・リリース](docs/deployment.md) | 配布 ZIP の起動、IIS・Pages への配備、Release 手順と成果物 |
 | [変更履歴](CHANGELOG.md) | 各版の機能・修正と未リリースの変更 |
 | [UI/UX 改善案と対応状況](docs/feature-ideas.md) | 提案の状態と次回の検討順序 |
+
+## ライセンス
+
+このリポジトリのソースコードと文書（`src/`・`tests/`・`scripts/`・`docs/`・設定ファイル・`public/favicon.svg` など）は [MIT License](LICENSE) です。
+
+ビルドした配布物（Pages・Releases の ZIP）に含まれる CodeMirror 6、DOMPurify、marked、fflate などの第三者のコードは、それぞれの元のライセンスのままです。各ライセンスの全文と著作権表示は、配布物の `THIRD-PARTY-NOTICES.txt`（元のファイルは [public/THIRD-PARTY-NOTICES.txt](public/THIRD-PARTY-NOTICES.txt)）にまとめています。配布物の `LICENSE.txt` は、このリポジトリの `LICENSE` と同じ内容です。
