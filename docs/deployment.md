@@ -63,7 +63,7 @@ Release の build は型チェック・単体・本番ビルドと ZIP の静的
 | --- | --- |
 | タグ `vX.Y.Z` | 初回は実行時点の main のコミットに作成。既存タグがあればそのコミットをビルドし、タグは移動しない |
 | Release `Web Text Editor vX.Y.Z` | 検証成功後、下書きから公開。本文は変更履歴の該当節 |
-| `editor-vX.Y.Z.zip` | index.html・assets/・favicon.svg・fflate-LICENSE.txt。ソースや node_modules は含めない |
+| `editor-vX.Y.Z.zip` | index.html・assets/・favicon.svg・LICENSE.txt・THIRD-PARTY-NOTICES.txt。ソースや node_modules は含めない |
 | Actions artifact `release-files` | ZIP と release-notes.md。保持期間7日 |
 | build のジョブサマリー | 対象 SHA、ZIP 名・サイズ・SHA-256 |
 

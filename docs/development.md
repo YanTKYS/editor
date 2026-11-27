@@ -53,4 +53,6 @@ tests/
 - [CodeMirror 6](https://codemirror.net/)（MIT）。差分の計算に `@codemirror/merge` を利用しています
 - [marked](https://marked.js.org/)（MIT）
 - [DOMPurify](https://github.com/cure53/DOMPurify)（Apache-2.0 / MPL-2.0）
-- [fflate](https://github.com/101arrowz/fflate)（MIT）。一括書き出しの ZIP 生成に利用し、配布ファイルに同梱しています（[ライセンス全文](../public/fflate-LICENSE.txt)）
+- [fflate](https://github.com/101arrowz/fflate)（MIT）。一括書き出しの ZIP 生成に利用しています
+
+このエディタ自身は [MIT License](../LICENSE) です。ビルドした JavaScript に含まれる第三者のコードの著作権表示と許諾文は、[public/THIRD-PARTY-NOTICES.txt](../public/THIRD-PARTY-NOTICES.txt) にまとめ、自身の許諾文（`public/LICENSE.txt`、ルートの `LICENSE` と同じ内容）とともに `dist/` と配布 ZIP へ同梱します。同梱する依存ライブラリを追加・更新・削除した場合は、この通知を合わせて更新してください。
